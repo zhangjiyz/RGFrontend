@@ -87,6 +87,12 @@ RGFrontend 以 GPL-3.0-or-later 发布，并保留本项目、Pegasus Frontend �
 Roms/APPS/RGFrontend/licenses/
 ```
 
+源码地址：
+
+```text
+https://github.com/zhangjiyz/RGFrontend
+```
+
 ## 升级或重装
 
 升级时可直接把新版 zip 放到 TF 卡根目录并重新解压：

@@ -95,6 +95,12 @@ Installed license and notice files are stored under:
 Roms/APPS/RGFrontend/licenses/
 ```
 
+Source code:
+
+```text
+https://github.com/zhangjiyz/RGFrontend
+```
+
 ## Upgrade or Reinstall
 
 To upgrade, copy the new zip to the TF card root and extract it again:
