@@ -5,7 +5,7 @@
 本文适用于 H700 原厂 Linux 掌机的 release zip 安装包，例如：
 
 ```text
-RGFrontend-H700-0.1.0-rc1.zip
+RGFrontend-H700-1.0.0.zip
 ```
 
 RGFrontend 是游戏库与启动器，不包含 ROM、BIOS、模拟器或核心。安装包只会放入 APPS 入口和 RGFrontend 运行文件，不会修改系统 RetroArch 配置、系统核心、原厂启动脚本或系统启动项。
@@ -14,7 +14,7 @@ RGFrontend 是游戏库与启动器，不包含 ROM、BIOS、模拟器或核心�
 
 - 一台 H700 原厂 Linux 掌机。
 - 一张已能被掌机识别的 ROM 卡。
-- release zip，例如 `RGFrontend-H700-0.1.0-rc1.zip`。
+- release zip，例如 `RGFrontend-H700-1.0.0.zip`。
 
 zip 内部目录从 `Roms/` 开始：
 
@@ -29,12 +29,12 @@ Roms/APPS/Imgs/RGFrontend.png
 ## 全新安装
 
 1. 关闭掌机，取出 ROM 卡并插到电脑。
-2. 把 `RGFrontend-H700-0.1.0-rc1.zip` 复制到 TF 卡根目录。
+2. 把 `RGFrontend-H700-1.0.0.zip` 复制到 TF 卡根目录。
 
    正确位置示例：
 
    ```text
-   TF卡根目录/RGFrontend-H700-0.1.0-rc1.zip
+   TF卡根目录/RGFrontend-H700-1.0.0.zip
    TF卡根目录/Roms/
    ```
 
@@ -56,10 +56,10 @@ Roms/APPS/Imgs/RGFrontend.png
 如果掌机已开启 SSH，也可以直接把 zip 拷到卡根目录并在真机上解压：
 
 ```sh
-scp RGFrontend-H700-0.1.0-rc1.zip root@10.1.1.233:/mnt/mmc/
+scp RGFrontend-H700-1.0.0.zip root@10.1.1.233:/mnt/mmc/
 ssh root@10.1.1.233
 cd /mnt/mmc
-unzip -o RGFrontend-H700-0.1.0-rc1.zip
+unzip -o RGFrontend-H700-1.0.0.zip
 ```
 
 安装后可检查这些路径：
@@ -87,19 +87,13 @@ RGFrontend 以 GPL-3.0-or-later 发布，并保留本项目、Pegasus Frontend �
 Roms/APPS/RGFrontend/licenses/
 ```
 
-源码地址：
-
-```text
-https://github.com/zhangjiyz/RGFrontend
-```
-
 ## 升级或重装
 
 升级时可直接把新版 zip 放到 TF 卡根目录并重新解压：
 
 ```sh
 cd /mnt/mmc
-unzip -o RGFrontend-H700-0.1.0-rc1.zip
+unzip -o RGFrontend-H700-1.0.0.zip
 ```
 
 如需干净重装，只删除以下 APPS 文件后再解压 zip：
@@ -145,7 +139,7 @@ RGFrontend 的收藏、最近、扫描缓存和设置默认保存在掌机应用
 通常是 zip 解压位置不对。请确认不是这样的结构：
 
 ```text
-TF卡根目录/RGFrontend-H700-0.1.0-rc1/Roms/APPS/...
+TF卡根目录/RGFrontend-H700-1.0.0/Roms/APPS/...
 ```
 
 正确结构应是：

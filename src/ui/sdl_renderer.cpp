@@ -1748,10 +1748,13 @@ void RenderAboutView(SDL_Renderer *renderer, const UiSession &session) {
   constexpr int kTextX = 56;
   int y = 48;
   DrawText(renderer, "RGFrontend", kTextX, y, 30, kInk, canvas_width - 112);
-  y += 46;
+  y += 42;
+  DrawText(renderer, "Version 1.0.0", kTextX, y, 18, kMuted,
+           canvas_width - 112);
+  y += 34;
   DrawText(renderer, "Developed by zhangjiyz", kTextX, y, 18, kMuted,
            canvas_width - 112);
-  y += 62;
+  y += 54;
   DrawText(renderer, "Copyright (c) 2026 zhangjiyz", kTextX, y, 17, kInk,
            canvas_width - 112);
   y += 34;
