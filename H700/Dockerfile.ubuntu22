@@ -1,0 +1,13 @@
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      g++-aarch64-linux-gnu \
+      make \
+      pkg-config \
+      binutils-aarch64-linux-gnu && \
+    rm -rf /var/lib/apt/lists/*

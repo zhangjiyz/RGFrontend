@@ -1,0 +1,65 @@
+# macOS and editor noise
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Build outputs
+/build/
+/H700/dist_app/
+/H700/sysroot/
+*.o
+*.obj
+*.d
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.app/
+
+# Local runtime state and logs
+/state/
+/cache/
+/logs/
+/diagnostics/
+/desktop-demo-state/
+*.log
+
+# Local reference checkout; do not commit upstream source/packages into this repo.
+/upstream/
+
+# Private development context
+/AGENTS.md
+/MEMORY.md
+/docs/PRD.md
+
+# Device images, dumps, ROMs, BIOS, emulator cores, and packaged archives
+*.img
+*.iso
+*.bin
+*.cue
+*.chd
+*.m3u
+*.rom
+*.gb
+*.gbc
+*.gba
+*.nes
+*.sfc
+*.smc
+*.gen
+*.nds
+*.pbp
+*.zip
+*.7z
+*.rar
+
+# Local tool and environment folders
+/.vscode/
+/.idea/
+/.cache/
+/.tmp/
+/tmp/
+.env
+.env.*
