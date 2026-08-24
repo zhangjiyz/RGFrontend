@@ -262,6 +262,25 @@ int main() {
   assert(page_session.selected_visible_index == 0);
   assert(SelectedGame(page_session)->id == "gba-00");
 
+  UiSession scroll_session =
+      CreateUiSession(page_library, UiState{"all", "gba-00", 0, "grid"});
+  ApplyUiAction(&scroll_session, UiAction::Down, layout);
+  ApplyUiAction(&scroll_session, UiAction::Down, layout);
+  ApplyUiAction(&scroll_session, UiAction::Down, layout);
+  assert(scroll_session.selected_visible_index == 12);
+  assert(scroll_session.scroll_offset == 0);
+  ApplyUiAction(&scroll_session, UiAction::Down, layout);
+  assert(scroll_session.selected_visible_index == 16);
+  assert(scroll_session.scroll_offset == 4);
+  ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  assert(scroll_session.selected_visible_index == 4);
+  assert(scroll_session.scroll_offset == 4);
+  ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  assert(scroll_session.selected_visible_index == 0);
+  assert(scroll_session.scroll_offset == 0);
+
   const UiLayout tiny = ResolveUiLayout(320, 240);
   assert(tiny.grid_columns >= 2);
   assert(tiny.card_width > 0);

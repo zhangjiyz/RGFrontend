@@ -382,6 +382,11 @@ AudioPreviewPlayer::~AudioPreviewPlayer() {
   Shutdown();
 }
 
+void AudioPreviewPlayer::SetDeviceOpenedCallback(std::function<void()> callback) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  device_opened_callback_ = std::move(callback);
+}
+
 void AudioPreviewPlayer::Start(std::string path, bool loop) {
   if (!FileExists(path)) {
     Stop();
@@ -459,6 +464,12 @@ void AudioPreviewPlayer::Worker() {
     }
     return;
   }
+  std::function<void()> device_opened_callback;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    device_opened_callback = device_opened_callback_;
+  }
+  if (device_opened_callback) device_opened_callback();
   SDL_PauseAudioDevice(device, 0);
   PipeProcess process;
   std::vector<std::uint8_t> buffer(8192);

@@ -15,17 +15,31 @@ GAME_VOLUME_SCRIPT="${MPL_H700_GAME_VOLUME_SCRIPT:-$SCRIPT_DIR/game_volume.sh}"
 CORE_DIR="${MPL_H700_CORE_DIR:-/mnt/vendor/deep/retro/cores}"
 CORES_MAP="${MPL_H700_CORES_MAP:-/mnt/mod/ctrl/configs/CORES.txt}"
 NDS_LAUNCHER="${MPL_H700_NDS_LAUNCHER:-/mnt/vendor/ctrl/setNDS.sh}"
+NDS_WORKDIR="${MPL_H700_NDS_WORKDIR:-/mnt/vendor/deep/drastic}"
+NDS_CONTROL_STATE_PATH="${MPL_H700_NDS_CONTROL_STATE_PATH:-/sys/class/power_supply/axp2202-battery/nds_esckey}"
 PSP_LAUNCHER="${MPL_H700_PSP_LAUNCHER:-/mnt/vendor/deep/ppsspp/PPSSPPSDL}"
 PSP_BOARD_INI="${MPL_H700_BOARD_INI:-/mnt/vendor/oem/board.ini}"
 PSP_SDL_PRELOAD="${MPL_H700_PSP_SDL_PRELOAD:-/mnt/vendor/sdl2/libSDL2-2.0.so.0.2800.5}"
+PSP_LD_LIBRARY_PATH="${MPL_H700_PSP_LD_LIBRARY_PATH:-/usr/lib32:/usr/lib:/mnt/vendor/lib}"
 OPENBOR_SETUP="${MPL_H700_OPENBOR_SETUP:-/mnt/vendor/deep/openBOR/scripts/openbor.sh}"
 OPENBOR_LAUNCHER="${MPL_H700_OPENBOR_LAUNCHER:-/mnt/vendor/deep/openBOR/OpenBOR.dge}"
+OPENBOR_WORKDIR="${MPL_H700_OPENBOR_WORKDIR:-/mnt/vendor/deep/openBOR}"
+OPENBOR_LD_LIBRARY_PATH="${MPL_H700_OPENBOR_LD_LIBRARY_PATH:-/usr/lib32:/usr/lib:/mnt/vendor/lib}"
 PORTS_SHELL="${MPL_H700_PORTS_SHELL:-/bin/bash}"
 PORTS_JOY_HELPER="${MPL_H700_PORTS_JOY_HELPER:-/mnt/mod/ctrl/joy}"
+PORTS_WORKDIR="${MPL_H700_PORTS_WORKDIR:-/mnt/mod/ctrl}"
+PORTS_CONTROL_STATE_PATH="${MPL_H700_PORTS_CONTROL_STATE_PATH:-/sys/class/power_supply/axp2202-battery/nds_esckey}"
+PORTS_LD_LIBRARY_PATH="${MPL_H700_PORTS_LD_LIBRARY_PATH:-/usr/lib32:/usr/lib:/mnt/vendor/lib}"
 JAVA_LAUNCHER="${MPL_H700_JAVA_LAUNCHER:-/mnt/vendor/deep/emuJava/launch.sh}"
+JAVA_WORKDIR="${MPL_H700_JAVA_WORKDIR:-/mnt/vendor/deep/emuJava}"
+JAVA_CONTROL_STATE_PATH="${MPL_H700_JAVA_CONTROL_STATE_PATH:-/sys/class/power_supply/axp2202-battery/nds_esckey}"
+JAVA_LD_LIBRARY_PATH="${MPL_H700_JAVA_LD_LIBRARY_PATH:-/usr/lib32:/usr/lib:/mnt/vendor/lib}"
 SATURN_LAUNCHER="${MPL_H700_SATURN_LAUNCHER:-/mnt/vendor/ctrl/setSaturn.sh}"
 SATURN_EMULATOR="${MPL_H700_SATURN_EMULATOR:-/emuelec/saturn/yabasanshiro}"
 SATURN_BIOS="${MPL_H700_SATURN_BIOS:-/emuelec/saturn/bios/saturn_bios.bin}"
+SATURN_WORKDIR="${MPL_H700_SATURN_WORKDIR:-/emuelec/saturn}"
+SATURN_CONTROL_STATE_PATH="${MPL_H700_SATURN_CONTROL_STATE_PATH:-/sys/class/power_supply/axp2202-battery/nds_esckey}"
+SATURN_LD_LIBRARY_PATH="${MPL_H700_SATURN_LD_LIBRARY_PATH:-/usr/lib32:/usr/lib:/mnt/vendor/lib}"
 SATURN_MODE="${MPL_H700_SATURN_MODE:-HLE}"
 SATURN_USE_SET_SCRIPT="${MPL_H700_SATURN_USE_SET_SCRIPT:-1}"
 SATURN_FULLSCREEN="${MPL_H700_SATURN_FULLSCREEN:-0}"
@@ -196,7 +210,7 @@ release_game_audio() {
   fi
 }
 
-set_retroarch_game_hardware_volume() {
+set_full_game_hardware_volume() {
   command -v amixer >/dev/null 2>&1 || return 0
   unset LD_PRELOAD
   amixer -q -c 0 set "lineout volume" 31 >/dev/null 2>&1 &&
@@ -205,10 +219,44 @@ set_retroarch_game_hardware_volume() {
     amixer -q -c 0 set "SPK" on >/dev/null 2>&1
 }
 
+ports_control_mixer_value_for_level() {
+  case "$1" in
+    0) printf '0\n' ;;
+    1) printf '5\n' ;;
+    2) printf '10\n' ;;
+    3) printf '16\n' ;;
+    4) printf '19\n' ;;
+    5) printf '21\n' ;;
+    6) printf '23\n' ;;
+    7) printf '25\n' ;;
+    8) printf '27\n' ;;
+    9) printf '29\n' ;;
+    10) printf '31\n' ;;
+    *) printf '23\n' ;;
+  esac
+}
+
+prepare_ports_controlled_game_audio() {
+  command -v amixer >/dev/null 2>&1 || return 0
+  unset LD_PRELOAD
+  ports_volume_level="$(current_volume_level)"
+  ports_lineout_level="$(ports_control_mixer_value_for_level "$ports_volume_level")"
+  amixer -q -c 0 set "lineout volume" "$ports_lineout_level" >/dev/null 2>&1 || return 1
+  if [ "$ports_volume_level" -eq 0 ]; then
+    amixer -q -c 0 set "digital volume" 0 >/dev/null 2>&1 || true
+    amixer -q -c 0 set "SPK" off >/dev/null 2>&1 || true
+  else
+    amixer -q -c 0 set "digital volume" 63 >/dev/null 2>&1 || true
+    amixer -q -c 0 set "LINEOUT" on >/dev/null 2>&1 || true
+    amixer -q -c 0 set "SPK" on >/dev/null 2>&1 || true
+  fi
+  log_line "[launch] prepared ports-controlled game audio volume=$ports_volume_level lineout=$ports_lineout_level"
+}
+
 prepare_retroarch_game_audio() {
   [ -x "$GAME_VOLUME_SCRIPT" ] || return 1
   MPL_STATE_DIR="$STATE_DIR" "$GAME_VOLUME_SCRIPT" prepare || return 1
-  set_retroarch_game_hardware_volume || return 1
+  set_full_game_hardware_volume || return 1
   log_line "[launch] prepared retroarch game audio hardware=lineout31 software=audio_volume"
   return 0
 }
@@ -453,6 +501,14 @@ launch_nds() {
     log_line "[launch] rejected standalone_launcher_missing platform=nds path=$NDS_LAUNCHER"
     return 15
   }
+  [ -d "$NDS_WORKDIR" ] || {
+    log_line "[launch] rejected standalone_workdir_missing platform=nds path=$NDS_WORKDIR"
+    return 15
+  }
+  [ -w "$NDS_CONTROL_STATE_PATH" ] || {
+    log_line "[launch] rejected nds_control_state_unwritable platform=nds path=$NDS_CONTROL_STATE_PATH"
+    return 15
+  }
 
   log_line "[launch] launching platform=nds launcher=h700-standalone-nds game=$game_id rom=$rom_path runner=$NDS_LAUNCHER"
   release_game_audio
@@ -464,8 +520,27 @@ launch_nds() {
     log_line "[launch] failed rc=$savedir_rc platform=nds game=$game_id stage=savedir"
     return "$savedir_rc"
   fi
-  "$NDS_LAUNCHER" run "$rom_path" >>"$LOG_FILE" 2>&1
+  # The stock dmenu enables this transient kernel-driver state before it hands
+  # off to setNDS.sh. ndsCtrl.dge exits immediately unless nds_esckey reads 1.
+  if ! printf '1\n' >"$NDS_CONTROL_STATE_PATH"; then
+    log_line "[launch] failed rc=15 platform=nds game=$game_id stage=control-enable"
+    return 15
+  fi
+  log_line "[launch] enabled nds control state path=$NDS_CONTROL_STATE_PATH"
+
+  # Match the stock dmenu /tmp/.next context. Do not leak the frontend's SDL
+  # environment into the 32-bit stock helper or emulator.
+  (
+    cd "$NDS_WORKDIR" || exit 15
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    "$NDS_LAUNCHER" run "$rom_path"
+  ) >>"$LOG_FILE" 2>&1
   rc=$?
+  if printf '0\n' >"$NDS_CONTROL_STATE_PATH"; then
+    log_line "[launch] disabled nds control state path=$NDS_CONTROL_STATE_PATH"
+  else
+    log_line "[launch] warning nds_control_state_reset_failed path=$NDS_CONTROL_STATE_PATH"
+  fi
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"
     log_line "[launch] completed rc=0 platform=nds game=$game_id"
@@ -496,13 +571,27 @@ launch_psp() {
   }
 
   log_line "[launch] launching platform=psp launcher=h700-standalone-psp game=$game_id rom=$rom_path runner=$PSP_LAUNCHER"
-  release_game_audio
+  # Stock PPSSPP keeps the hardware path at full output and implements the
+  # openbor_volume scale in software. Applying the frontend lineout scale here
+  # attenuates the audio a second time and can make the game effectively mute.
+  if set_full_game_hardware_volume; then
+    log_line "[launch] prepared psp game audio hardware=lineout31 software=ppsspp"
+  else
+    log_line "[launch] warning psp_game_audio_prepare_failed"
+  fi
   unset LD_PRELOAD
   if psp_needs_sdl_preload; then
     export LD_PRELOAD="$PSP_SDL_PRELOAD"
     log_line "[launch] psp preload=$PSP_SDL_PRELOAD"
   fi
-  (cd "$psp_launcher_dir" && "./$psp_launcher_name" "$rom_path") >>"$LOG_FILE" 2>&1
+  (
+    cd "$psp_launcher_dir" || exit 15
+    # Match the stock dmenu /tmp/.next environment. PPSSPP owns its SDL input,
+    # audio and video setup; frontend-specific SDL variables break that path.
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    export LD_LIBRARY_PATH="$PSP_LD_LIBRARY_PATH"
+    "./$psp_launcher_name" "$rom_path"
+  ) >>"$LOG_FILE" 2>&1
   rc=$?
   unset LD_PRELOAD
   if [ "$rc" -eq 0 ]; then
@@ -525,9 +614,20 @@ launch_openbor() {
     log_line "[launch] rejected standalone_launcher_missing platform=openbor path=$OPENBOR_LAUNCHER"
     return 15
   }
+  [ -d "$OPENBOR_WORKDIR" ] || {
+    log_line "[launch] rejected standalone_workdir_missing platform=openbor path=$OPENBOR_WORKDIR"
+    return 15
+  }
 
   log_line "[launch] launching platform=openbor launcher=h700-standalone-openbor game=$game_id rom=$rom_path setup=$OPENBOR_SETUP runner=$OPENBOR_LAUNCHER"
-  release_game_audio
+  # Stock OpenBOR keeps the hardware path at full output and applies the
+  # openbor_volume scale internally, just like PPSSPP. Frontend hardware
+  # attenuation here would reduce the same logical volume a second time.
+  if set_full_game_hardware_volume; then
+    log_line "[launch] prepared openbor game audio hardware=lineout31 software=openbor"
+  else
+    log_line "[launch] warning openbor_game_audio_prepare_failed"
+  fi
   unset LD_PRELOAD
   "$OPENBOR_SETUP" "$rom_path" >>"$LOG_FILE" 2>&1
   setup_rc=$?
@@ -535,7 +635,12 @@ launch_openbor() {
     log_line "[launch] failed rc=$setup_rc platform=openbor game=$game_id stage=setup"
     return "$setup_rc"
   fi
-  "$OPENBOR_LAUNCHER" "$rom_path" >>"$LOG_FILE" 2>&1
+  (
+    cd "$OPENBOR_WORKDIR" || exit 15
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    export LD_LIBRARY_PATH="$OPENBOR_LD_LIBRARY_PATH"
+    "$OPENBOR_LAUNCHER" "$rom_path"
+  ) >>"$LOG_FILE" 2>&1
   rc=$?
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"
@@ -568,20 +673,48 @@ launch_ports() {
       return 16
       ;;
   esac
+  [ -d "$PORTS_WORKDIR" ] || {
+    log_line "[launch] rejected standalone_workdir_missing platform=ports path=$PORTS_WORKDIR"
+    return 15
+  }
+  [ -w "$PORTS_CONTROL_STATE_PATH" ] || {
+    log_line "[launch] rejected ports_control_state_unwritable platform=ports path=$PORTS_CONTROL_STATE_PATH"
+    return 15
+  }
 
   log_line "[launch] launching platform=ports launcher=h700-standalone-ports game=$game_id rom=$rom_path runner=$PORTS_SHELL"
-  release_game_audio
+  prepare_ports_controlled_game_audio || log_line "[launch] warning ports_game_audio_prepare_failed"
+  if ! printf '1\n' >"$PORTS_CONTROL_STATE_PATH"; then
+    log_line "[launch] failed rc=15 platform=ports game=$game_id stage=control-enable"
+    return 15
+  fi
+  log_line "[launch] enabled ports control state path=$PORTS_CONTROL_STATE_PATH"
   unset LD_PRELOAD
   if ports_needs_joy_helper; then
     if [ -x "$PORTS_JOY_HELPER" ]; then
-      "$PORTS_JOY_HELPER" >>"$LOG_FILE" 2>&1 &
+      (
+        cd "$PORTS_WORKDIR" || exit 15
+        unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+        export LD_LIBRARY_PATH="$PORTS_LD_LIBRARY_PATH"
+        "$PORTS_JOY_HELPER"
+      ) >>"$LOG_FILE" 2>&1 &
       log_line "[launch] ports joy_helper=$PORTS_JOY_HELPER"
     else
       log_line "[launch] ports joy_helper_missing path=$PORTS_JOY_HELPER"
     fi
   fi
-  "$PORTS_SHELL" "$rom_path" >>"$LOG_FILE" 2>&1
+  (
+    cd "$PORTS_WORKDIR" || exit 15
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    export LD_LIBRARY_PATH="$PORTS_LD_LIBRARY_PATH"
+    "$PORTS_SHELL" "$rom_path"
+  ) >>"$LOG_FILE" 2>&1
   rc=$?
+  if printf '0\n' >"$PORTS_CONTROL_STATE_PATH"; then
+    log_line "[launch] disabled ports control state path=$PORTS_CONTROL_STATE_PATH"
+  else
+    log_line "[launch] warning ports_control_state_reset_failed path=$PORTS_CONTROL_STATE_PATH"
+  fi
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"
     log_line "[launch] completed rc=0 platform=ports game=$game_id"
@@ -605,12 +738,37 @@ launch_java() {
       return 16
       ;;
   esac
+  [ -d "$JAVA_WORKDIR" ] || {
+    log_line "[launch] rejected standalone_workdir_missing platform=java path=$JAVA_WORKDIR"
+    return 15
+  }
+  [ -w "$JAVA_CONTROL_STATE_PATH" ] || {
+    log_line "[launch] rejected java_control_state_unwritable platform=java path=$JAVA_CONTROL_STATE_PATH"
+    return 15
+  }
 
   log_line "[launch] launching platform=java launcher=h700-standalone-java game=$game_id rom=$rom_path runner=$JAVA_LAUNCHER"
-  release_game_audio
+  prepare_ports_controlled_game_audio || log_line "[launch] warning java_game_audio_prepare_failed"
+  if ! printf '1\n' >"$JAVA_CONTROL_STATE_PATH"; then
+    log_line "[launch] failed rc=15 platform=java game=$game_id stage=control-enable"
+    return 15
+  fi
+  log_line "[launch] enabled java control state path=$JAVA_CONTROL_STATE_PATH"
   unset LD_PRELOAD
-  "$JAVA_LAUNCHER" "$rom_path" >>"$LOG_FILE" 2>&1
+  (
+    cd "$JAVA_WORKDIR" || exit 15
+    # Match the stock dmenu context. launch.sh starts portsCtrl.dge after it
+    # enters the JDK directory; frontend SDL variables break that helper path.
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    export LD_LIBRARY_PATH="$JAVA_LD_LIBRARY_PATH"
+    "$JAVA_LAUNCHER" "$rom_path"
+  ) >>"$LOG_FILE" 2>&1
   rc=$?
+  if printf '0\n' >"$JAVA_CONTROL_STATE_PATH"; then
+    log_line "[launch] disabled java control state path=$JAVA_CONTROL_STATE_PATH"
+  else
+    log_line "[launch] warning java_control_state_reset_failed path=$JAVA_CONTROL_STATE_PATH"
+  fi
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"
     log_line "[launch] completed rc=0 platform=java game=$game_id"
@@ -638,6 +796,14 @@ launch_saturn() {
     HLE|BIOS) ;;
     *) SATURN_MODE=BIOS ;;
   esac
+  [ -d "$SATURN_WORKDIR" ] || {
+    log_line "[launch] rejected standalone_workdir_missing platform=saturn path=$SATURN_WORKDIR"
+    return 15
+  }
+  [ -w "$SATURN_CONTROL_STATE_PATH" ] || {
+    log_line "[launch] rejected saturn_control_state_unwritable platform=saturn path=$SATURN_CONTROL_STATE_PATH"
+    return 15
+  }
 
   if [ "$SATURN_USE_SET_SCRIPT" = "1" ]; then
     [ -x "$SATURN_LAUNCHER" ] || {
@@ -645,9 +811,19 @@ launch_saturn() {
       return 15
     }
     log_line "[launch] launching platform=saturn launcher=h700-standalone-saturn game=$game_id rom=$rom_path runner=$SATURN_LAUNCHER mode=$SATURN_MODE"
-    release_game_audio
+    prepare_ports_controlled_game_audio || log_line "[launch] warning saturn_game_audio_prepare_failed"
+    if ! printf '1\n' >"$SATURN_CONTROL_STATE_PATH"; then
+      log_line "[launch] failed rc=15 platform=saturn game=$game_id stage=control-enable"
+      return 15
+    fi
+    log_line "[launch] enabled saturn control state path=$SATURN_CONTROL_STATE_PATH"
     unset LD_PRELOAD
-    "$SATURN_LAUNCHER" "$SATURN_MODE" "$rom_path" >>"$LOG_FILE" 2>&1
+    (
+      cd "$SATURN_WORKDIR" || exit 15
+      unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+      export LD_LIBRARY_PATH="$SATURN_LD_LIBRARY_PATH"
+      "$SATURN_LAUNCHER" "$SATURN_MODE" "$rom_path"
+    ) >>"$LOG_FILE" 2>&1
     rc=$?
   else
     [ -x "$SATURN_EMULATOR" ] || {
@@ -662,13 +838,6 @@ launch_saturn() {
     case "$rom_path" in
       "$SDCARD_ROOT"/*) home_dir="$SDCARD_ROOT" ;;
     esac
-    if ! ps -A | grep "portsCtrl.dge" >/dev/null 2>&1; then
-      if [ -x "$MMC_ROOT/portsCtrl.dge" ]; then
-        "$MMC_ROOT/portsCtrl.dge" >>"$LOG_FILE" 2>&1 &
-      elif [ -x /mnt/vendor/bin/portsCtrl.dge ]; then
-        /mnt/vendor/bin/portsCtrl.dge >>"$LOG_FILE" 2>&1 &
-      fi
-    fi
     case "$SATURN_FULLSCREEN" in
       1|true|TRUE|yes|YES) SATURN_FULLSCREEN=1 ;;
       *) SATURN_FULLSCREEN=0 ;;
@@ -676,8 +845,22 @@ launch_saturn() {
     fullscreen_arg=
     [ "$SATURN_FULLSCREEN" = "1" ] && fullscreen_arg="-f"
     log_line "[launch] launching platform=saturn launcher=h700-standalone-saturn game=$game_id rom=$rom_path runner=$SATURN_EMULATOR mode=$SATURN_MODE autostart=1 fullscreen=$SATURN_FULLSCREEN"
-    release_game_audio
+    prepare_ports_controlled_game_audio || log_line "[launch] warning saturn_game_audio_prepare_failed"
+    if ! printf '1\n' >"$SATURN_CONTROL_STATE_PATH"; then
+      log_line "[launch] failed rc=15 platform=saturn game=$game_id stage=control-enable"
+      return 15
+    fi
+    log_line "[launch] enabled saturn control state path=$SATURN_CONTROL_STATE_PATH"
+    if ! ps -A | grep "portsCtrl.dge" >/dev/null 2>&1; then
+      if [ -x "$MMC_ROOT/portsCtrl.dge" ]; then
+        "$MMC_ROOT/portsCtrl.dge" >>"$LOG_FILE" 2>&1 &
+      elif [ -x /mnt/vendor/bin/portsCtrl.dge ]; then
+        /mnt/vendor/bin/portsCtrl.dge >>"$LOG_FILE" 2>&1 &
+      fi
+    fi
     unset LD_PRELOAD
+    unset SDL_VIDEODRIVER SDL_AUDIODRIVER SDL_NOMOUSE
+    export LD_LIBRARY_PATH="$SATURN_LD_LIBRARY_PATH"
     display_id="$(cat /sys/class/power_supply/axp2202-battery/display_id 2>/dev/null || true)"
     audio_prefix=
     [ "$display_id" = "1" ] && audio_prefix="AUDIODEV=hw:2,0"
@@ -691,6 +874,11 @@ launch_saturn() {
       HOME="$home_dir" "$SATURN_EMULATOR" -r 3 -i "$rom_path" -a $fullscreen_arg >>"$LOG_FILE" 2>&1
     fi
     rc=$?
+  fi
+  if printf '0\n' >"$SATURN_CONTROL_STATE_PATH"; then
+    log_line "[launch] disabled saturn control state path=$SATURN_CONTROL_STATE_PATH"
+  else
+    log_line "[launch] warning saturn_control_state_reset_failed path=$SATURN_CONTROL_STATE_PATH"
   fi
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"

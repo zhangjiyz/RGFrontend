@@ -14,6 +14,35 @@ namespace mpl {
 
 namespace {
 
+constexpr int kCurrentFontSizeScaleVersion = 2;
+constexpr int kCurrentStartupLogoStyleVersion = 1;
+
+int MigrateCoverTitleSizeLevel(int level) {
+  switch (level) {
+    case 0:
+      return 0;
+    case 1:
+      return 3;
+    case 2:
+      return 5;
+    default:
+      return level;
+  }
+}
+
+int MigrateDescriptionSizeLevel(int level) {
+  switch (level) {
+    case 0:
+      return 0;
+    case 1:
+      return 4;
+    case 2:
+      return 5;
+    default:
+      return level;
+  }
+}
+
 struct StoredGameState {
   bool favorite = false;
   std::uint64_t recent_order = 0;
@@ -125,6 +154,8 @@ bool UiStateStore::Load(UiState *state) const {
   std::ifstream in(fs::u8path(path_));
   if (!in) return false;
   UiState loaded;
+  loaded.font_size_scale_version = 0;
+  loaded.startup_logo_style_version = 0;
   std::string line;
   while (std::getline(in, line)) {
     const size_t equals = line.find('=');
@@ -153,6 +184,10 @@ bool UiStateStore::Load(UiState *state) const {
       loaded.cover_title_size_level = std::max(0, std::atoi(value.c_str()));
     } else if (key == "description_size_level") {
       loaded.description_size_level = std::max(0, std::atoi(value.c_str()));
+    } else if (key == "font_size_scale_version") {
+      loaded.font_size_scale_version = std::max(0, std::atoi(value.c_str()));
+    } else if (key == "startup_logo_style_version") {
+      loaded.startup_logo_style_version = std::max(0, std::atoi(value.c_str()));
     } else if (key == "show_cover_titles") {
       loaded.show_cover_titles = value != "0";
     } else if (key == "fullscreen_grid") {
@@ -162,6 +197,17 @@ bool UiStateStore::Load(UiState *state) const {
     } else if (key == "preview_video_loop") {
       loaded.preview_video_loop = value != "0";
     }
+  }
+  if (loaded.font_size_scale_version < kCurrentFontSizeScaleVersion) {
+    loaded.cover_title_size_level =
+        MigrateCoverTitleSizeLevel(loaded.cover_title_size_level);
+    loaded.description_size_level =
+        MigrateDescriptionSizeLevel(loaded.description_size_level);
+    loaded.font_size_scale_version = kCurrentFontSizeScaleVersion;
+  }
+  if (loaded.startup_logo_style_version < kCurrentStartupLogoStyleVersion) {
+    loaded.startup_logo_style = 1;
+    loaded.startup_logo_style_version = kCurrentStartupLogoStyleVersion;
   }
   *state = std::move(loaded);
   return true;
@@ -182,6 +228,8 @@ bool UiStateStore::Save(const UiState &state) const {
   out << "startup_logo_style=" << std::max(0, state.startup_logo_style) << '\n';
   out << "cover_title_size_level=" << std::max(0, state.cover_title_size_level) << '\n';
   out << "description_size_level=" << std::max(0, state.description_size_level) << '\n';
+  out << "font_size_scale_version=" << kCurrentFontSizeScaleVersion << '\n';
+  out << "startup_logo_style_version=" << kCurrentStartupLogoStyleVersion << '\n';
   out << "show_cover_titles=" << (state.show_cover_titles ? 1 : 0) << '\n';
   out << "fullscreen_grid=" << (state.fullscreen_grid ? 1 : 0) << '\n';
   out << "preview_video_enabled=" << (state.preview_video_enabled ? 1 : 0) << '\n';

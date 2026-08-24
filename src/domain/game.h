@@ -48,6 +48,7 @@ struct Game {
   std::string collection_id;
   std::string collection_title;
   std::string title;
+  std::string display_title;
   std::string developer;
   std::string publisher;
   std::string genre;

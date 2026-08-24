@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -48,6 +49,7 @@ class AudioPreviewPlayer {
   void Start(std::string path, bool loop);
   void Stop();
   void Shutdown();
+  void SetDeviceOpenedCallback(std::function<void()> callback);
   const std::string &Path() const { return path_; }
   bool Loop() const { return loop_; }
 
@@ -64,6 +66,7 @@ class AudioPreviewPlayer {
   std::uint64_t request_version_ = 0;
   std::uint64_t ack_version_ = 0;
   bool shutdown_ = false;
+  std::function<void()> device_opened_callback_;
   std::string path_;
   bool loop_ = false;
 };

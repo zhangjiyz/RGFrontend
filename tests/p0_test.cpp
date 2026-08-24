@@ -93,6 +93,7 @@ int main() {
   assert(meta);
   assert(second_card);
   assert(meta->source == "pegasus");
+  assert(meta->display_title == "2001-Meta/Example Publisher");
   assert(meta->collection_title == "GBA");
   assert(meta->collection_id == "collection:GBA");
   assert(meta->developer == "Example Studio");
@@ -152,6 +153,37 @@ int main() {
   assert(loaded_ui.selected_game_id == meta->id);
   assert(loaded_ui.scroll_offset == 4);
   assert(loaded_ui.fullscreen_grid);
+  assert(loaded_ui.cover_title_size_level == 3);
+  assert(loaded_ui.description_size_level == 4);
+  assert(loaded_ui.font_size_scale_version == 2);
+  assert(loaded_ui.startup_logo_style == 1);
+  assert(loaded_ui.startup_logo_style_version == 1);
+
+  const fs::path legacy_ui_path = state_dir / "legacy-ui.txt";
+  {
+    std::ofstream legacy_ui(legacy_ui_path);
+    legacy_ui << "cover_title_size_level=1\n";
+    legacy_ui << "description_size_level=1\n";
+  }
+  UiStateStore legacy_ui_state(legacy_ui_path.u8string());
+  UiState migrated_ui;
+  assert(legacy_ui_state.Load(&migrated_ui));
+  assert(migrated_ui.cover_title_size_level == 3);
+  assert(migrated_ui.description_size_level == 4);
+  assert(migrated_ui.font_size_scale_version == 2);
+  assert(migrated_ui.startup_logo_style == 1);
+  assert(migrated_ui.startup_logo_style_version == 1);
+
+  const fs::path explicit_logo_path = state_dir / "explicit-logo-ui.txt";
+  {
+    std::ofstream explicit_logo_ui(explicit_logo_path);
+    explicit_logo_ui << "startup_logo_style=0\n";
+    explicit_logo_ui << "startup_logo_style_version=1\n";
+  }
+  UiStateStore explicit_logo_state(explicit_logo_path.u8string());
+  UiState explicit_logo_ui;
+  assert(explicit_logo_state.Load(&explicit_logo_ui));
+  assert(explicit_logo_ui.startup_logo_style == 0);
 
   LaunchRequest request = BuildLaunchRequest(*gba_platform, *meta, meta->primary_target.path);
   LaunchValidation validation =

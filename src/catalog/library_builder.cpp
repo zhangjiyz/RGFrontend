@@ -24,7 +24,7 @@ namespace mpl {
 
 namespace {
 
-constexpr int kScanCacheVersion = 18;
+constexpr int kScanCacheVersion = 20;
 
 struct CachedRoot {
   std::string platform_id;
@@ -178,6 +178,7 @@ CachedLibrary LoadScanCache(const std::string &cache_path) {
         if (std::getline(row, primary_target_label, '\t') && !primary_target_label.empty()) {
           game.primary_target.label = primary_target_label;
         }
+        std::getline(row, game.display_title, '\t');
         cache.games.push_back(std::move(game));
       }
     }
@@ -278,6 +279,7 @@ void MergeGame(const Game &game, LibraryBuildReport *report,
     if (merged.media.cover.empty()) merged.media.cover = previous.media.cover;
     if (merged.media.logo.empty()) merged.media.logo = previous.media.logo;
     if (merged.media.video.empty()) merged.media.video = previous.media.video;
+    if (merged.display_title.empty()) merged.display_title = previous.display_title;
     if (merged.developer.empty()) merged.developer = previous.developer;
     if (merged.publisher.empty()) merged.publisher = previous.publisher;
     if (merged.genre.empty()) merged.genre = previous.genre;
@@ -381,7 +383,7 @@ void WriteScanCache(const Library &library, const std::string &cache_path,
     out << "# game\tgame_id\tplatform_id\trom_path\ttitle\tsource\tsort_key\tsize\tmtime\tsample"
         << "\tcover\tlogo\tvideo\tdeveloper\tdescription\tmetadata_path\tlaunch_hint\tmulti_file"
         << "\tcollection_id\tcollection_title\tpublisher\tgenre\trelease\texternal_id"
-        << "\talternate_targets\talternate_target_ids\tprimary_target_label\n";
+        << "\talternate_targets\talternate_target_ids\tprimary_target_label\tdisplay_title\n";
     for (const Game &game : library.games) {
       out << "game\t" << game.id << '\t' << game.platform_id << '\t'
           << CleanField(game.primary_target.path) << '\t' << CleanField(game.title) << '\t'
@@ -401,7 +403,8 @@ void WriteScanCache(const Library &library, const std::string &cache_path,
           << CleanField(game.external_id) << '\t'
           << CleanField(JoinAlternateTargets(game.alternate_targets)) << '\t'
           << CleanField(JoinStrings(game.alternate_target_ids)) << '\t'
-          << CleanField(game.primary_target.label) << '\n';
+          << CleanField(game.primary_target.label) << '\t'
+          << CleanField(game.display_title) << '\n';
     }
     if (!out) return;
   }

@@ -68,6 +68,21 @@ std::string UnescapeText(std::string value) {
   return result;
 }
 
+std::string BuildDisplayTitle(const ParsedGame &entry) {
+  const bool single_file = entry.files.size() == 1 && !entry.files.front().empty();
+  std::string game_name = entry.title;
+  if (single_file) {
+    fs::path file_path = fs::u8path(entry.files.front());
+    file_path.replace_extension();
+    game_name = file_path.u8string();
+  }
+  std::string title;
+  if (!entry.release.empty()) title = entry.release + "-";
+  title += game_name;
+  if (!entry.publisher.empty()) title += "/" + entry.publisher;
+  return title;
+}
+
 void AddMetadataFiles(const fs::path &root, std::vector<fs::path> *files) {
   std::error_code error;
   if (fs::is_regular_file(root, error) && root.filename() == "metadata.pegasus.txt") {
@@ -289,6 +304,7 @@ ScanResult PegasusProvider::Scan(const Platform &platform,
       game.collection_id = "collection:" + game.collection_title;
     }
     game.title = resolved.entry.title;
+    game.display_title = BuildDisplayTitle(resolved.entry);
     game.developer = resolved.entry.developer;
     game.publisher = resolved.entry.publisher;
     game.genre = resolved.entry.genre;
@@ -327,7 +343,8 @@ ScanResult PegasusProvider::Scan(const Platform &platform,
     game.non_executable_launch_hint = resolved.entry.launch_hint;
     game.launch_hint = ResolveLaunchHint(resolved.entry.launch_hint);
     const std::string ext = LowerAscii(primary_path.extension().u8string());
-    game.multi_file_entry = ext == ".cue" || ext == ".m3u" || ext == ".chd";
+    game.multi_file_entry = resolved.entry.files.size() > 1 ||
+                            ext == ".cue" || ext == ".m3u" || ext == ".chd";
     result.games.push_back(std::move(game));
   }
   return result;

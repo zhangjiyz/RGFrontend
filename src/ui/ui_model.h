@@ -95,9 +95,9 @@ struct UiPreferences {
   UiGridSize grid_size = UiGridSize::Medium;
   UiBgmMode bgm_mode = UiBgmMode::GameAudio;
   int theme_color = 0;
-  int startup_logo_style = 0;
-  int cover_title_size_level = 1;
-  int description_size_level = 1;
+  int startup_logo_style = 1;
+  int cover_title_size_level = 3;
+  int description_size_level = 4;
   bool show_cover_titles = true;
   bool fullscreen_grid = false;
   bool preview_video_enabled = true;

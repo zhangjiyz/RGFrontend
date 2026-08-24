@@ -5,11 +5,13 @@
 #include <SDL_ttf.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
 #include <cstdlib>
 #include <cstdint>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <iomanip>
@@ -39,7 +41,7 @@ constexpr int kGridY = 45;
 constexpr int kGridInset = 16;
 constexpr int kFullscreenGridX = 0;
 constexpr int kFullscreenGridInset = 18;
-constexpr int kTabTextFontSize = 14;
+constexpr int kTabTextFontSize = 16;
 constexpr int kTabHorizontalPadding = 18;
 constexpr int kCoverTitleBaseFontSize = 12;
 constexpr int kDescriptionBaseFontSize = 14;
@@ -51,7 +53,7 @@ constexpr int kCoverDecodeMaxDimension = 256;
 constexpr std::size_t kMaxPendingCoverRequests = 64;
 constexpr int kPrewarmCoverRadius = 12;
 constexpr double kDefaultPegasusCoverAspect = 1.42;
-constexpr Uint32 kCoverScaleDurationMs = 140;
+constexpr double kSelectedCoverScale = 1.15;
 constexpr Uint32 kTabTransitionDurationMs = 240;
 
 constexpr SDL_Color kBackground{3, 4, 5, 255};
@@ -140,12 +142,16 @@ std::string g_video_texture_path;
 int g_seen_bgm_track_revision = 0;
 std::vector<std::string> g_music_tracks;
 std::size_t g_music_track_index = 0;
-std::string g_selected_animation_id;
-Uint32 g_selected_animation_started_at = 0;
 std::string g_cover_request_view_key;
 std::string g_pegasus_aspect_view_key;
 double g_pegasus_aspect = kDefaultPegasusCoverAspect;
 bool g_pegasus_aspect_locked = false;
+enum class GridVerticalAnchor {
+  Top,
+  Bottom,
+};
+GridVerticalAnchor g_grid_vertical_anchor = GridVerticalAnchor::Top;
+std::string g_grid_vertical_anchor_view_key;
 int g_render_canvas_width = kLogicalWidth;
 int g_render_canvas_height = kLogicalHeight;
 
@@ -168,11 +174,46 @@ void Fill(SDL_Renderer *renderer, const SDL_Rect &rect, SDL_Color color) {
   SDL_RenderFillRect(renderer, &rect);
 }
 
-void FillBlend(SDL_Renderer *renderer, const SDL_Rect &rect, SDL_Color color) {
+void FillVerticalAlphaGradient(SDL_Renderer *renderer, const SDL_Rect &rect,
+                               SDL_Color color, Uint8 top_alpha,
+                               Uint8 bottom_alpha) {
+  if (rect.w <= 0 || rect.h <= 0) return;
   SDL_BlendMode previous = SDL_BLENDMODE_NONE;
   SDL_GetRenderDrawBlendMode(renderer, &previous);
   SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-  Fill(renderer, rect, color);
+  const int denominator = std::max(1, rect.h - 1);
+  for (int row = 0; row < rect.h; ++row) {
+    const double progress = row / static_cast<double>(denominator);
+    const double remaining = 1.0 - progress;
+    const double eased = 1.0 - remaining * remaining;
+    const int alpha = static_cast<int>(std::lround(
+        top_alpha + (static_cast<int>(bottom_alpha) -
+                     static_cast<int>(top_alpha)) * eased));
+    color.a = static_cast<Uint8>(std::clamp(alpha, 0, 255));
+    SetColor(renderer, color);
+    SDL_RenderDrawLine(renderer, rect.x, rect.y + row,
+                      rect.x + rect.w - 1, rect.y + row);
+  }
+  SDL_SetRenderDrawBlendMode(renderer, previous);
+}
+
+void FillHorizontalAlphaGradient(SDL_Renderer *renderer, const SDL_Rect &rect,
+                                 SDL_Color color, Uint8 left_alpha,
+                                 Uint8 right_alpha) {
+  if (rect.w <= 0 || rect.h <= 0) return;
+  SDL_BlendMode previous = SDL_BLENDMODE_NONE;
+  SDL_GetRenderDrawBlendMode(renderer, &previous);
+  SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+  const int denominator = std::max(1, rect.w - 1);
+  for (int column = 0; column < rect.w; ++column) {
+    const int alpha = left_alpha +
+        (static_cast<int>(right_alpha) - static_cast<int>(left_alpha)) * column /
+            denominator;
+    color.a = static_cast<Uint8>(std::clamp(alpha, 0, 255));
+    SetColor(renderer, color);
+    SDL_RenderDrawLine(renderer, rect.x + column, rect.y,
+                      rect.x + column, rect.y + rect.h - 1);
+  }
   SDL_SetRenderDrawBlendMode(renderer, previous);
 }
 
@@ -619,6 +660,20 @@ std::string PaddedNumber(int value, int width) {
   return stream.str();
 }
 
+std::string ClockText() {
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t value = std::chrono::system_clock::to_time_t(now);
+  std::tm local{};
+#ifdef _WIN32
+  localtime_s(&local, &value);
+#else
+  localtime_r(&value, &local);
+#endif
+  std::ostringstream stream;
+  stream << std::put_time(&local, "%H:%M");
+  return stream.str();
+}
+
 int DigitCount(int value) {
   int digits = 1;
   for (value = std::max(0, value); value >= 10; value /= 10) ++digits;
@@ -846,56 +901,6 @@ void DrawTextRight(SDL_Renderer *renderer, const std::string &text, int right_x,
   DrawText(renderer, text, right_x - width, y, size, color);
 }
 
-void DrawScrollingText(SDL_Renderer *renderer, const std::string &text,
-                       const SDL_Rect &bounds, int point_size, SDL_Color color) {
-  if (text.empty() || bounds.w <= 0 || bounds.h <= 0) return;
-  TTF_Font *font = Font(point_size);
-  if (!font) {
-    DrawText(renderer, text, bounds.x + bounds.w / 2, bounds.y, point_size, color,
-             bounds.w, true);
-    return;
-  }
-  int width = 0;
-  if (TTF_SizeUTF8(font, text.c_str(), &width, nullptr) != 0 || width <= bounds.w) {
-    DrawText(renderer, text, bounds.x + bounds.w / 2, bounds.y, point_size, color,
-             bounds.w, true);
-    return;
-  }
-
-  const std::string key = "scroll:" + text + "#" + std::to_string(point_size) + "#" +
-                          std::to_string(color.r) + "," + std::to_string(color.g) +
-                          "," + std::to_string(color.b) + "," + std::to_string(color.a);
-  CachedTexture *cached = LoadTextTexture(renderer, key, font, text, color);
-  if (!cached || !cached->texture) return;
-
-  constexpr int kGap = 48;
-  constexpr int kPauseMs = 900;
-  constexpr int kPixelsPerSecond = 34;
-  const int scroll_distance = cached->width + kGap;
-  const int scroll_ms = std::max(1, (scroll_distance * 1000) / kPixelsPerSecond);
-  const int cycle_ms = kPauseMs * 2 + scroll_ms;
-  const int tick = static_cast<int>(SDL_GetTicks() % cycle_ms);
-  int offset = 0;
-  if (tick > kPauseMs) {
-    offset = tick < kPauseMs + scroll_ms
-                 ? ((tick - kPauseMs) * kPixelsPerSecond) / 1000
-                 : scroll_distance;
-  }
-
-  const bool previous_clip_enabled = SDL_RenderIsClipEnabled(renderer) == SDL_TRUE;
-  SDL_Rect previous_clip{};
-  SDL_RenderGetClipRect(renderer, &previous_clip);
-  SDL_RenderSetClipRect(renderer, &bounds);
-  const int y = bounds.y + std::max(0, (bounds.h - cached->height) / 2);
-  SDL_Rect destination{bounds.x - offset, y, cached->width, cached->height};
-  SDL_RenderCopy(renderer, cached->texture, nullptr, &destination);
-  if (destination.x + destination.w + kGap < bounds.x + bounds.w) {
-    destination.x += cached->width + kGap;
-    SDL_RenderCopy(renderer, cached->texture, nullptr, &destination);
-  }
-  SDL_RenderSetClipRect(renderer, previous_clip_enabled ? &previous_clip : nullptr);
-}
-
 std::vector<std::string> Utf8Characters(const std::string &text) {
   std::vector<std::string> chars;
   for (std::size_t index = 0; index < text.size();) {
@@ -986,6 +991,25 @@ const UiNavItem &TabItemAt(const UiSession &session, int index) {
   return session.navigation[WrappedNavIndex(index, count)];
 }
 
+int AdaptiveTabVisualCount(const UiSession &session, int start_index,
+                           int available_width) {
+  const int nav_count = static_cast<int>(session.navigation.size());
+  if (nav_count <= 0 || available_width <= 0) return 0;
+  int used_width = 0;
+  int count = 0;
+  while (count < nav_count) {
+    const int index = WrappedNavIndex(start_index + count, nav_count);
+    const int width = TabWidth(TabItemAt(session, index));
+    if (used_width + width > available_width) {
+      if (used_width < available_width) ++count;
+      break;
+    }
+    used_width += width;
+    ++count;
+  }
+  return std::max(1, std::min(count, nav_count));
+}
+
 std::string PlatformLabel(const Game &game) {
   std::string label = game.platform_id;
   std::transform(label.begin(), label.end(), label.begin(), [](unsigned char c) {
@@ -1029,25 +1053,13 @@ int CanvasHeight() {
 }
 
 int CoverTitleFontSize(const UiSession &session) {
-  switch (session.preferences.cover_title_size_level) {
-    case 0:
-      return 10;
-    case 2:
-      return 14;
-    default:
-      return kCoverTitleBaseFontSize;
-  }
+  return kCoverTitleBaseFontSize +
+         std::clamp(session.preferences.cover_title_size_level, 0, 5);
 }
 
 int DescriptionFontSize(const UiSession &session) {
-  switch (session.preferences.description_size_level) {
-    case 0:
-      return 12;
-    case 2:
-      return 16;
-    default:
-      return kDescriptionBaseFontSize;
-  }
+  return kDescriptionBaseFontSize +
+         std::clamp(session.preferences.description_size_level, 0, 5);
 }
 
 int GridColumns(const UiSession &session) {
@@ -1069,18 +1081,6 @@ int GridColumns(const UiSession &session) {
 float SmoothStep(float value) {
   const float clamped = std::max(0.0f, std::min(1.0f, value));
   return clamped * clamped * (3.0f - 2.0f * clamped);
-}
-
-float SelectedScale(const Game &game) {
-  const std::string key = game.id;
-  const Uint32 now = SDL_GetTicks();
-  if (key != g_selected_animation_id) {
-    g_selected_animation_id = key;
-    g_selected_animation_started_at = now;
-  }
-  const float progress = SmoothStep((now - g_selected_animation_started_at) /
-                                    static_cast<float>(kCoverScaleDurationMs));
-  return 1.0f + 0.15f * progress;
 }
 
 float ChromeHiddenProgress(const UiSession &session) {
@@ -1118,6 +1118,10 @@ int GridVisibleRows(const UiSession &session) {
 bool IsPegasusGame(const Game &game) {
   return game.source == "pegasus" ||
          game.metadata_path.find("metadata.pegasus.txt") != std::string::npos;
+}
+
+const std::string &DisplayTitle(const Game &game) {
+  return game.display_title.empty() ? game.title : game.display_title;
 }
 
 bool UsePegasusGridLayout(const UiSession &session) {
@@ -1220,6 +1224,7 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
   const int active_index = nav_count > 0
                                ? std::clamp(session.active_nav_index, 0, nav_count - 1)
                                : 0;
+  const SDL_Rect tabs_clip{0, 0, std::max(1, canvas_width - 140), 45};
   const Uint32 now = SDL_GetTicks();
   if (nav_count <= 0) {
     g_tab_transition = TabTransitionState{};
@@ -1250,7 +1255,8 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
 
   std::vector<TabVisual> visuals;
   if (nav_count > 0) {
-    const int visible_count = std::min(6, nav_count);
+    const int visible_count =
+        AdaptiveTabVisualCount(session, active_index, tabs_clip.w);
     if (g_tab_transition.direction == 0) {
       float x = 0.0f;
       for (int slot = 0; slot < visible_count; ++slot) {
@@ -1299,7 +1305,6 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     }
   }
 
-  const SDL_Rect tabs_clip{0, 0, std::max(1, canvas_width - 140), 45};
   SDL_RenderSetClipRect(renderer, &tabs_clip);
   SDL_BlendMode previous_blend = SDL_BLENDMODE_NONE;
   SDL_GetRenderDrawBlendMode(renderer, &previous_blend);
@@ -1326,6 +1331,13 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     SetColor(renderer, divider);
     SDL_RenderDrawLine(renderer, tab_x + width - 8, 42, tab_x + width + 8, 2);
   }
+  constexpr int kTabRightFadeWidth = 36;
+  const int fade_width = std::min(kTabRightFadeWidth, tabs_clip.w);
+  FillHorizontalAlphaGradient(
+      renderer,
+      SDL_Rect{tabs_clip.x + tabs_clip.w - fade_width, tabs_clip.y,
+               fade_width, tabs_clip.h - 1},
+      theme.bar, 0, 255);
   SDL_SetRenderDrawBlendMode(renderer, previous_blend);
   SDL_RenderSetClipRect(renderer, nullptr);
 
@@ -1347,9 +1359,9 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     const std::string nav_index_text =
         "合集:" + PaddedNumber(nav_index + 1, 2) + "/" +
         PaddedNumber(static_cast<int>(session.navigation.size()), 2);
-    DrawTextRight(renderer, game_index_text, canvas_width - 84, 26, 10,
+    DrawTextRight(renderer, game_index_text, canvas_width - 80, 25, 13,
                   SDL_Color{235, 237, 240, 220});
-    DrawTextRight(renderer, nav_index_text, canvas_width - 5, 26, 10,
+    DrawTextRight(renderer, nav_index_text, canvas_width - 5, 25, 13,
                   SDL_Color{235, 237, 240, 205});
   }
 
@@ -1358,7 +1370,9 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
       battery_percent >= 0 ? std::to_string(std::clamp(battery_percent, 0, 100)) + "%"
                            : "--%";
   constexpr int kBatteryOffsetY = 3;
-  DrawTextRight(renderer, battery_text, canvas_width - 31, 0 + kBatteryOffsetY, 9,
+  DrawTextRight(renderer, ClockText(), canvas_width - 75, kBatteryOffsetY, 12,
+                kStatusWhite);
+  DrawTextRight(renderer, battery_text, canvas_width - 31, 0 + kBatteryOffsetY, 12,
                 kStatusWhite);
   const SDL_Rect battery_body{canvas_width - 27, 2 + kBatteryOffsetY, 18, 10};
   Stroke(renderer, battery_body, kStatusWhite);
@@ -1389,16 +1403,25 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
   }
 
   const bool has_logo = !game->media.logo.empty();
-  constexpr int kMediaTopOffset = 12;
-  int media_y = 151 + kMediaTopOffset;
+  constexpr int kTitleSize = 17;
+  constexpr int kTitleLineHeight = 21;
+  const int title_y = has_logo ? 120 : 51;
   if (has_logo) {
     const SDL_Rect logo_bounds{18, 52, 204, 67};
     DrawMediaImage(renderer, game->media.logo, logo_bounds);
-    DrawScrollingText(renderer, game->title, SDL_Rect{13, 120, 214, 25}, 17, kInk);
-  } else {
-    DrawScrollingText(renderer, game->title, SDL_Rect{13, 51, 214, 25}, 17, kInk);
-    media_y = 84 + kMediaTopOffset;
   }
+
+  const std::string &title = DisplayTitle(*game);
+  std::vector<std::string> title_lines = WrappedTextLines(title, 214, kTitleSize);
+  if (title_lines.empty()) title_lines.push_back(title);
+  for (std::size_t index = 0; index < title_lines.size(); ++index) {
+    DrawText(renderer, title_lines[index], 120,
+             title_y + static_cast<int>(index) * kTitleLineHeight,
+             kTitleSize, kInk, 214, true);
+  }
+  constexpr int kTitleGap = 8;
+  const int media_y = title_y +
+      static_cast<int>(title_lines.size()) * kTitleLineHeight + kTitleGap;
 
   const SDL_Rect video_bounds{13, media_y, 214, 120};
   Fill(renderer, video_bounds, SDL_Color{0, 0, 0, 255});
@@ -1420,17 +1443,13 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
   }
   Stroke(renderer, video_bounds, SDL_Color{58, 61, 65, 255});
 
-  if (!game->developer.empty()) {
-    DrawText(renderer, game->developer, 13, media_y + 127, 12, kMuted, 214);
-  }
-  const std::string core_text = "核心 " + CurrentCoreDisplayName(session);
-  DrawText(renderer, core_text, 13, media_y + 143, 12, kMuted, 214);
   if (!game->description.empty()) {
     const int description_size = DescriptionFontSize(session);
     const int line_height = description_size + 5;
-    const int max_lines = std::max(1, (canvas_height - (media_y + 167) - 8) /
+    const int description_y = media_y + video_bounds.h + 10;
+    const int max_lines = std::max(1, (canvas_height - description_y - 8) /
                                            line_height);
-    DrawWrappedText(renderer, game->description, 13, media_y + 167, 214,
+    DrawWrappedText(renderer, game->description, 13, description_y, 214,
                     line_height, max_lines,
                     description_size, kInk, session.description_scroll_line);
   }
@@ -1452,10 +1471,48 @@ std::string TargetLabel(const LaunchTarget &target) {
   return stem.empty() ? path.filename().u8string() : stem;
 }
 
-void DrawCoverTitle(SDL_Renderer *renderer, const Game &game, const SDL_Rect &bounds,
-                    int size, SDL_Color color) {
-  DrawText(renderer, game.title, bounds.x + bounds.w / 2, bounds.y, size, color,
-           bounds.w, true);
+void DrawCoverTitle(SDL_Renderer *renderer, const std::string &title,
+                    const SDL_Rect &bounds, int size, SDL_Color color,
+                    bool highlighted) {
+  if (title.empty() || bounds.w <= 0 || bounds.h <= 0) return;
+  const int text_width_limit = bounds.w;
+  TTF_Font *font = Font(size);
+  if (!highlighted) {
+    int text_width = 0;
+    int text_height = size;
+    if (font) TTF_SizeUTF8(font, title.c_str(), &text_width, &text_height);
+    DrawText(renderer, title, bounds.x + bounds.w / 2,
+             bounds.y + std::max(0, (bounds.h - text_height) / 2), size, color,
+             text_width_limit, true);
+    return;
+  }
+  if (!font) {
+    DrawText(renderer, title, bounds.x + bounds.w / 2,
+             bounds.y + std::max(0, (bounds.h - size) / 2), size, color,
+             text_width_limit, true);
+    return;
+  }
+
+  constexpr int kVerticalPadding = 3;
+  const int line_height = size + 4;
+  std::vector<std::string> lines = WrappedTextLines(title, text_width_limit, size);
+  if (lines.empty()) lines.push_back(title);
+  const int max_lines = std::max(1, (bounds.h - kVerticalPadding * 2) / line_height);
+  if (static_cast<int>(lines.size()) > max_lines) {
+    lines.resize(max_lines);
+    lines.back() = Ellipsize(lines.back() + "...", font, text_width_limit);
+  }
+  const int total_height = static_cast<int>(lines.size()) * line_height;
+  const int start_y = bounds.y + std::max(0, (bounds.h - total_height) / 2);
+  int text_width = 0;
+  int text_height = size;
+  TTF_SizeUTF8(font, "Ag", &text_width, &text_height);
+  for (std::size_t index = 0; index < lines.size(); ++index) {
+    DrawText(renderer, lines[index], bounds.x + bounds.w / 2,
+             start_y + static_cast<int>(index) * line_height +
+                 std::max(0, (line_height - text_height) / 2),
+             size, color, text_width_limit, true);
+  }
 }
 
 void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
@@ -1483,7 +1540,7 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
                                 ? card_width * columns + gap * (columns - 1)
                                 : card_width * columns;
   const int base_x = bounds.x + (bounds.w - content_width) / 2;
-  const int base_y = bounds.y + inset;
+  const int top_aligned_y = bounds.y + inset;
   const int visible_rows = pegasus_grid
                                ? std::max(1, (bounds.h - inset * 2) / step_y)
                                : GridVisibleRows(session);
@@ -1492,8 +1549,31 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
     const int selected_row = session.selected_visible_index / columns;
     if (selected_row < scroll_row) {
       scroll_row = selected_row;
-    } else if (selected_row >= scroll_row + visible_rows) {
-      scroll_row = std::max(0, selected_row - visible_rows + 1);
+    } else if (selected_row > scroll_row + visible_rows) {
+      scroll_row = std::max(0, selected_row - visible_rows);
+    }
+  }
+  int base_y = top_aligned_y;
+  if (session.selected_visible_index >= 0) {
+    const int bottom_aligned_y = bounds.y + bounds.h - inset - card_height -
+                                 visible_rows * step_y;
+    const int selected_row_in_view = std::clamp(
+        session.selected_visible_index / columns - scroll_row, 0, visible_rows);
+    std::ostringstream anchor_key;
+    anchor_key << session.active_nav_index << ':' << session.visible_game_indices.size()
+               << ':' << columns << ':' << bounds.w << 'x' << bounds.h << ':'
+               << (pegasus_grid ? 1 : 0);
+    if (anchor_key.str() != g_grid_vertical_anchor_view_key) {
+      g_grid_vertical_anchor_view_key = anchor_key.str();
+      g_grid_vertical_anchor = GridVerticalAnchor::Top;
+    }
+    if (selected_row_in_view <= 0) {
+      g_grid_vertical_anchor = GridVerticalAnchor::Top;
+    } else if (selected_row_in_view >= visible_rows) {
+      g_grid_vertical_anchor = GridVerticalAnchor::Bottom;
+    }
+    if (g_grid_vertical_anchor == GridVerticalAnchor::Bottom) {
+      base_y = std::min(top_aligned_y, bottom_aligned_y);
     }
   }
   const int start = scroll_row * columns;
@@ -1519,17 +1599,29 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
 
     if (session.preferences.show_cover_titles) {
       const int title_size = CoverTitleFontSize(session);
-      const int title_height = std::clamp(std::max(cover.h / 5, title_size + 8),
-                                          22, 34);
+      const std::string &title = game.title;
+      const int stable_title_width = std::max(1, cover.w - 8);
+      const int line_height = title_size + 4;
+      int title_lines = 1;
+      if (highlighted) {
+        const std::vector<std::string> lines =
+            WrappedTextLines(title, stable_title_width, title_size);
+        title_lines = std::max(1, static_cast<int>(lines.size()));
+      }
+      const int title_height = std::min(
+          cover.h, std::max(22, title_lines * line_height + 6));
       const SDL_Rect title_bg{cover.x, cover.y + cover.h - title_height,
                               cover.w, title_height};
-      SDL_Color title_background = theme.selected;
-      title_background.a = 168;
-      FillBlend(renderer, title_bg, title_background);
-      DrawCoverTitle(renderer, game,
-                     SDL_Rect{cover.x + 4, cover.y + cover.h - title_height + 4,
-                              cover.w - 8, title_height - 4},
-                     title_size, SDL_Color{255, 255, 255, 210});
+      constexpr int kGradientExtension = 10;
+      const int gradient_y = std::max(cover.y, title_bg.y - kGradientExtension);
+      const SDL_Rect gradient_bg{cover.x, gradient_y, cover.w,
+                                 cover.y + cover.h - gradient_y};
+      FillVerticalAlphaGradient(renderer, gradient_bg, theme.selected,
+                                0, 255);
+      DrawCoverTitle(renderer, title,
+                     SDL_Rect{cover.x + 4, title_bg.y,
+                              cover.w - 8, title_bg.h},
+                     title_size, SDL_Color{255, 255, 255, 230}, highlighted);
     }
     if (game.favorite) {
       DrawText(renderer, "*", cover.x + cover.w - 11, cover.y + 3, 20, theme.accent, 16, true);
@@ -1563,14 +1655,15 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
                                ? cell
                                : SDL_Rect{cell.x + 3, cell.y + 3,
                                           cell.w - 6, cell.h - 6};
-    draw_card(visible_index, cover, false);
-    if (visible_index == session.selected_visible_index) {
-      const Game &game = session.library.games[session.visible_game_indices[visible_index]];
-      const double scale = SelectedScale(game);
-      const int expanded_width = static_cast<int>(std::lround(cover.w * scale));
-      const int expanded_height = static_cast<int>(std::lround(cover.h * scale));
-      const int center_x = cell.x + cell.w / 2;
-      const int center_y = cell.y + cell.h / 2;
+    const bool selected = visible_index == session.selected_visible_index;
+    if (!selected) draw_card(visible_index, cover, false);
+    if (selected) {
+      const int expanded_width = static_cast<int>(
+          std::lround(cover.w * kSelectedCoverScale));
+      const int expanded_height = static_cast<int>(
+          std::lround(cover.h * kSelectedCoverScale));
+      const int center_x = cover.x + cover.w / 2;
+      const int center_y = cover.y + cover.h / 2;
       scaled_cards.push_back({visible_index,
                               ClampRectInside(
                                   SDL_Rect{center_x - expanded_width / 2,
@@ -1720,7 +1813,7 @@ void RenderSettingsView(SDL_Renderer *renderer, const UiSession &session) {
       Fill(renderer, SDL_Rect{482, row.y + 18, 28, 28}, theme.selected);
       Stroke(renderer, SDL_Rect{482, row.y + 18, 28, 28}, SDL_Color{160, 164, 170, 255});
     }
-    DrawTextRight(renderer, SettingsValue(session, index), value_right, row.y + 20, 17,
+    DrawTextRight(renderer, SettingsValue(session, index), value_right, row.y + 19, 18,
                   index >= 12 || ((index >= 1 && index <= 3) &&
                                   SettingsValue(session, index) == "不可用")
                       ? kMuted
@@ -1749,7 +1842,7 @@ void RenderAboutView(SDL_Renderer *renderer, const UiSession &session) {
   int y = 48;
   DrawText(renderer, "RGFrontend", kTextX, y, 30, kInk, canvas_width - 112);
   y += 42;
-  DrawText(renderer, "Version 1.0.0", kTextX, y, 18, kMuted,
+  DrawText(renderer, "Version 1.0.1", kTextX, y, 18, kMuted,
            canvas_width - 112);
   y += 34;
   DrawText(renderer, "Developed by zhangjiyz", kTextX, y, 18, kMuted,
@@ -1934,7 +2027,7 @@ void RenderCoreSelectOverlay(SDL_Renderer *renderer, const UiSession &session) {
                         dialog_width, dialog_height};
   Fill(renderer, dialog, SDL_Color{17, 18, 20, 250});
   Stroke(renderer, dialog, SDL_Color{112, 116, 122, 255});
-  DrawText(renderer, "选择游戏核心", dialog.x + dialog.w / 2, dialog.y + 12, 19,
+  DrawText(renderer, "选择游戏核心", dialog.x + dialog.w / 2, dialog.y + 12, 20,
            kInk, dialog.w - 40, true);
   DrawText(renderer, game->title, dialog.x + dialog.w / 2, dialog.y + 43, 13,
            kMuted, dialog.w - 60, true);
@@ -1953,7 +2046,7 @@ void RenderCoreSelectOverlay(SDL_Renderer *renderer, const UiSession &session) {
       Fill(renderer, SDL_Rect{row.x, row.y, 4, row.h}, theme.accent);
     }
     const SDL_Color color = index == session.core_selected_index ? theme.accent : kInk;
-    DrawText(renderer, option.label, row.x + 14, row.y + 8, 17, color, row.w - 96);
+    DrawText(renderer, option.label, row.x + 14, row.y + 8, 18, color, row.w - 96);
     if (option.core == current) {
       DrawTextRight(renderer, "当前", row.x + row.w - 14, row.y + 9, 15, theme.accent);
     }
@@ -1988,7 +2081,7 @@ void RenderOsd(SDL_Renderer *renderer, const UiSession &session) {
   const SDL_Rect box{(CanvasWidth() - 256) / 2, CanvasHeight() - 88, 256, 42};
   Fill(renderer, box, SDL_Color{0, 0, 0, 205});
   Stroke(renderer, box, theme.accent);
-  DrawText(renderer, session.osd_text, box.x + box.w / 2, box.y + 11, 17, kInk,
+  DrawText(renderer, session.osd_text, box.x + box.w / 2, box.y + 11, 18, kInk,
            box.w - 20, true);
 }
 
@@ -2010,6 +2103,10 @@ void SetRendererMediaRoots(std::string app_dir, std::string state_dir) {
   g_seen_bgm_track_revision = 0;
 }
 
+void SetRendererAudioDeviceOpenedCallback(std::function<void()> callback) {
+  g_audio_preview.SetDeviceOpenedCallback(std::move(callback));
+}
+
 void ClearRendererMediaCache() {
   StopCoverImageWorker();
   ClearTextureCache(&g_cover_cache);
@@ -2026,6 +2123,8 @@ void ClearRendererMediaCache() {
   g_pegasus_aspect_view_key.clear();
   g_pegasus_aspect = kDefaultPegasusCoverAspect;
   g_pegasus_aspect_locked = false;
+  g_grid_vertical_anchor = GridVerticalAnchor::Top;
+  g_grid_vertical_anchor_view_key.clear();
 }
 
 bool RenderLibraryView(SDL_Renderer *renderer, const UiSession &session,

@@ -12,7 +12,7 @@ constexpr int kVisibleSettingsRows = 6;
 constexpr int kVisibleThemeRows = 7;
 constexpr int kVisibleTargetRows = 5;
 constexpr int kVisibleCoreRows = 5;
-constexpr int kFontSizeLevelCount = 3;
+constexpr int kFontSizeLevelCount = 6;
 
 int ClampIndex(int value, int minimum, int maximum) {
   return std::max(minimum, std::min(value, maximum));
@@ -391,13 +391,17 @@ void EnsureSelectionVisible(UiSession *session, const UiLayout &layout) {
   if (!session || session->visible_game_indices.empty()) return;
   const int columns = GridColumnsForPreferences(session->preferences);
   const int rows = GridRowsForPreferences(session->preferences, layout);
-  const int page_size = std::max(1, columns * rows);
-  if (session->selected_visible_index < session->scroll_offset) {
-    session->scroll_offset = session->selected_visible_index;
+  const int selected_row = session->selected_visible_index / columns;
+  int scroll_row = std::max(0, session->scroll_offset / columns);
+  if (selected_row < scroll_row) {
+    scroll_row = selected_row;
   }
-  if (session->selected_visible_index >= session->scroll_offset + page_size) {
-    session->scroll_offset = session->selected_visible_index - page_size + 1;
+  // The renderer keeps one extra clipped row below the fully visible rows. Let
+  // that row become the bottom selection row before advancing the viewport.
+  if (selected_row > scroll_row + rows) {
+    scroll_row = selected_row - rows;
   }
+  session->scroll_offset = scroll_row * columns;
 }
 
 void EnsureSettingsVisible(UiSession *session) {

@@ -20,13 +20,15 @@ struct UiState {
   int grid_size = 1;
   int bgm_mode = 1;
   int theme_color = 0;
-  int startup_logo_style = 0;
-  int cover_title_size_level = 1;
-  int description_size_level = 1;
+  int startup_logo_style = 1;
+  int cover_title_size_level = 3;
+  int description_size_level = 4;
   bool show_cover_titles = true;
   bool fullscreen_grid = false;
   bool preview_video_enabled = true;
   bool preview_video_loop = true;
+  int font_size_scale_version = 2;
+  int startup_logo_style_version = 1;
 };
 
 class GameStateStore {

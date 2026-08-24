@@ -310,6 +310,7 @@ int RunDesktopUiApp(const DesktopUiOptions &options, DesktopUiResult *result) {
             << (options.render_target == DesktopRenderTarget::Surface ? "surface" : "window")
             << '\n';
   SetRendererMediaRoots(options.app_dir, options.state_dir);
+  SetRendererAudioDeviceOpenedCallback(options.audio_device_opened_callback);
 
   Library library = options.library.games.empty() && options.library.platforms.empty()
                         ? BuildDemoLibrary()
@@ -431,6 +432,7 @@ int RunDesktopUiApp(const DesktopUiOptions &options, DesktopUiResult *result) {
             << " rc=" << (game_saved && ui_saved ? return_code : 5) << '\n';
 
   DestroySdlRendererHandle(&handle);
+  SetRendererAudioDeviceOpenedCallback({});
   SDL_Quit();
   return game_saved && ui_saved ? return_code : 5;
 }

@@ -22,6 +22,7 @@
 #include "devices/h700/platform_registry.h"
 #include "devices/h700/system_service.h"
 #include "services/state_store.h"
+#include "ui/sdl_renderer.h"
 #include "ui/ui_model.h"
 
 namespace {
@@ -237,6 +238,10 @@ class StartupScreen {
       SDL_Rect fill = track;
       fill.w = std::max(0, (track.w * percent) / 100);
       Fill(fill, {99, 178, 218, 255});
+      if (!message.empty()) {
+        DrawTextCentered(message, 0, 382, logical_width_,
+                         {160, 166, 172, 255}, text_font_);
+      }
     }
 
     SDL_RenderPresent(renderer_);
@@ -274,12 +279,12 @@ class StartupScreen {
 
   void DrawLogo() {
     if (!logo_texture_ || logo_width_ <= 0 || logo_height_ <= 0) return;
-    const int max_size = 152;
+    const int max_size = 200;
     const double scale = std::min(max_size / static_cast<double>(logo_width_),
                                   max_size / static_cast<double>(logo_height_));
     const int draw_width = std::max(1, static_cast<int>(logo_width_ * scale));
     const int draw_height = std::max(1, static_cast<int>(logo_height_ * scale));
-    const SDL_Rect rect{(logical_width_ - draw_width) / 2, 132, draw_width, draw_height};
+    const SDL_Rect rect{(logical_width_ - draw_width) / 2, 106, draw_width, draw_height};
     SDL_RenderCopy(renderer_, logo_texture_, nullptr, &rect);
   }
 
@@ -411,8 +416,12 @@ int main(int argc, char **argv) {
     }
   }
   options.state_dir = state_dir;
+  const std::string ui_font_path = FirstExistingFont(options.app_dir);
+  mpl::SetRendererFontPath(ui_font_path);
+  std::cerr << "[frontend] ui.font path="
+            << (ui_font_path.empty() ? "<none>" : ui_font_path) << '\n';
   const bool launched_from_game = restore_ui;
-  int startup_logo_style = 0;
+  int startup_logo_style = 1;
   {
     mpl::UiState state;
     if (mpl::UiStateStore(options.ui_state_path).Load(&state)) {
@@ -444,6 +453,13 @@ int main(int argc, char **argv) {
       std::cerr << "warning: failed to restore H700 volume\n";
     }
     options.system_service = system_service.get();
+    options.audio_device_opened_callback = [service = system_service.get()]() {
+      if (service->RestoreVolume()) {
+        std::cerr << "[frontend] restored H700 volume after SDL audio open\n";
+      } else {
+        std::cerr << "warning: failed to restore H700 volume after SDL audio open\n";
+      }
+    };
     std::cerr << "[perf] startup.system_service ms=" << ElapsedMs(system_start)
               << '\n';
   }

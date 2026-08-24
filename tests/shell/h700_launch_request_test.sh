@@ -14,6 +14,7 @@ mkdir -p "$ROOT/mnt/mmc/Roms/GBA" "$ROOT/mnt/sdcard/Roms/GBC" \
   "$ROOT/mnt/sdcard/Roms/PORTS" "$ROOT/mnt/sdcard/Roms/JAVA/240x320" \
   "$ROOT/mnt/sdcard/Roms/SATURN" "$ROOT/mnt/sdcard/Roms/SS" \
   "$ROOT/system/ppsspp" \
+  "$ROOT/system/drastic" \
   "$ROOT/bin" "$ROOT/system" "$ROOT/state" "$ROOT/logs" "$ROOT/cores"
 
 write_fake_launcher() {
@@ -64,6 +65,13 @@ write_fake_nds_launcher() {
   cat >"$ROOT/system/setNDS.sh" <<'EOS'
 #!/bin/sh
 printf 'cmd=%s rom=%s\n' "$1" "$2" >>"$MPL_FAKE_NDS_ARGS"
+if [ "$1" = "run" ]; then
+  printf 'cwd=%s\n' "$(pwd)" >"$MPL_FAKE_NDS_RUNTIME_ARGS"
+  printf 'control_state=%s\n' "$(cat "$MPL_FAKE_NDS_CONTROL_PATH")" >>"$MPL_FAKE_NDS_RUNTIME_ARGS"
+  printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_NDS_RUNTIME_ARGS"
+  printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_NDS_RUNTIME_ARGS"
+  printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_NDS_RUNTIME_ARGS"
+fi
 EOS
   chmod 755 "$ROOT/system/setNDS.sh"
 }
@@ -74,6 +82,10 @@ write_fake_psp_launcher() {
 printf 'cwd=%s\n' "$(pwd)" >"$MPL_FAKE_PSP_ARGS"
 printf 'rom=%s\n' "$1" >>"$MPL_FAKE_PSP_ARGS"
 printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_PSP_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_PSP_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_PSP_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_PSP_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_PSP_ARGS"
 EOS
   chmod 755 "$ROOT/system/ppsspp/PPSSPPSDL"
 }
@@ -86,6 +98,12 @@ EOS
   cat >"$ROOT/system/OpenBOR.dge" <<'EOS'
 #!/bin/sh
 printf 'run=%s\n' "$1" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'cwd=%s\n' "$(pwd)" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_OPENBOR_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_OPENBOR_ARGS"
 EOS
   chmod 755 "$ROOT/system/openbor.sh" "$ROOT/system/OpenBOR.dge"
 }
@@ -95,6 +113,12 @@ cat >"$ROOT/system/bash" <<'EOS'
 #!/bin/sh
 printf 'script=%s\n' "$1" >"$MPL_FAKE_PORTS_ARGS"
 printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'cwd=%s\n' "$(pwd)" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'control_state=%s\n' "$(cat "$MPL_FAKE_PORTS_CONTROL_PATH")" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_PORTS_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_PORTS_ARGS"
 for _ in 1 2 3 4 5; do
   [ -f "$MPL_FAKE_PORTS_JOY_ARGS" ] && break
   sleep 0.1
@@ -112,6 +136,12 @@ write_fake_java_launcher() {
 #!/bin/sh
 printf 'rom=%s\n' "$1" >"$MPL_FAKE_JAVA_ARGS"
 printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'cwd=%s\n' "$(pwd)" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'control_state=%s\n' "$(cat "$MPL_FAKE_JAVA_CONTROL_PATH")" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_JAVA_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_JAVA_ARGS"
 EOS
   chmod 755 "$ROOT/system/launch_java.sh"
 }
@@ -123,12 +153,24 @@ printf 'script=setSaturn\n' >"$MPL_FAKE_SATURN_ARGS"
 printf 'mode=%s\n' "$1" >>"$MPL_FAKE_SATURN_ARGS"
 printf 'rom=%s\n' "$2" >>"$MPL_FAKE_SATURN_ARGS"
 printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'cwd=%s\n' "$(pwd)" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'control_state=%s\n' "$(cat "$MPL_FAKE_SATURN_CONTROL_PATH")" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_SATURN_ARGS"
 EOS
   cat >"$ROOT/system/yabasanshiro" <<'EOS'
 #!/bin/sh
 printf 'script=yabasanshiro\n' >"$MPL_FAKE_SATURN_ARGS"
 printf 'home=%s\n' "$HOME" >>"$MPL_FAKE_SATURN_ARGS"
 printf 'ld_preload=%s\n' "${LD_PRELOAD:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'ld_library_path=%s\n' "${LD_LIBRARY_PATH:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'cwd=%s\n' "$(pwd)" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'control_state=%s\n' "$(cat "$MPL_FAKE_SATURN_CONTROL_PATH")" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_video=%s\n' "${SDL_VIDEODRIVER:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_audio=%s\n' "${SDL_AUDIODRIVER:-}" >>"$MPL_FAKE_SATURN_ARGS"
+printf 'sdl_nomouse=%s\n' "${SDL_NOMOUSE:-}" >>"$MPL_FAKE_SATURN_ARGS"
 while [ "$#" -gt 0 ]; do
   printf 'arg=%s\n' "$1" >>"$MPL_FAKE_SATURN_ARGS"
   shift
@@ -173,17 +215,26 @@ run_script() {
   MPL_H700_CORE_DIR="$ROOT/cores" \
   MPL_H700_CORES_MAP="$ROOT/system/CORES.txt" \
   MPL_H700_NDS_LAUNCHER="$ROOT/system/setNDS.sh" \
+  MPL_H700_NDS_WORKDIR="$NDS_WORKDIR" \
+  MPL_H700_NDS_CONTROL_STATE_PATH="$ROOT/system/nds_esckey" \
   MPL_H700_PSP_LAUNCHER="$ROOT/system/ppsspp/PPSSPPSDL" \
   MPL_H700_BOARD_INI="$ROOT/system/board.ini" \
   MPL_H700_PSP_SDL_PRELOAD="$ROOT/system/libSDL2-preload.so" \
   MPL_H700_OPENBOR_SETUP="$ROOT/system/openbor.sh" \
   MPL_H700_OPENBOR_LAUNCHER="$ROOT/system/OpenBOR.dge" \
+  MPL_H700_OPENBOR_WORKDIR="$OPENBOR_WORKDIR" \
   MPL_H700_PORTS_SHELL="$ROOT/system/bash" \
   MPL_H700_PORTS_JOY_HELPER="$ROOT/system/joy" \
+  MPL_H700_PORTS_WORKDIR="$PORTS_WORKDIR" \
+  MPL_H700_PORTS_CONTROL_STATE_PATH="$ROOT/system/ports_esckey" \
   MPL_H700_JAVA_LAUNCHER="$ROOT/system/launch_java.sh" \
+  MPL_H700_JAVA_WORKDIR="$JAVA_WORKDIR" \
+  MPL_H700_JAVA_CONTROL_STATE_PATH="$ROOT/system/java_esckey" \
   MPL_H700_SATURN_LAUNCHER="$ROOT/system/setSaturn.sh" \
   MPL_H700_SATURN_EMULATOR="$ROOT/system/yabasanshiro" \
   MPL_H700_SATURN_BIOS="$ROOT/system/saturn_bios.bin" \
+  MPL_H700_SATURN_WORKDIR="$SATURN_WORKDIR" \
+  MPL_H700_SATURN_CONTROL_STATE_PATH="$ROOT/system/saturn_esckey" \
   MPL_H700_SATURN_MODE="${MPL_H700_SATURN_MODE:-HLE}" \
   MPL_H700_SATURN_USE_SET_SCRIPT="${MPL_H700_SATURN_USE_SET_SCRIPT:-1}" \
   MPL_H700_SATURN_FULLSCREEN="${MPL_H700_SATURN_FULLSCREEN:-0}" \
@@ -193,14 +244,22 @@ run_script() {
   MPL_FAKE_RA_DIR="$ROOT/retroarch" \
   MPL_FAKE_LAUNCH_ARGS="$ROOT/launched.args" \
   MPL_FAKE_NDS_ARGS="$ROOT/nds.args" \
+  MPL_FAKE_NDS_RUNTIME_ARGS="$ROOT/nds-runtime.args" \
+  MPL_FAKE_NDS_CONTROL_PATH="$ROOT/system/nds_esckey" \
   MPL_FAKE_PSP_ARGS="$ROOT/psp.args" \
   MPL_FAKE_OPENBOR_ARGS="$ROOT/openbor.args" \
   MPL_FAKE_PORTS_ARGS="$ROOT/ports.args" \
   MPL_FAKE_PORTS_JOY_ARGS="$ROOT/ports_joy.args" \
+  MPL_FAKE_PORTS_CONTROL_PATH="$ROOT/system/ports_esckey" \
   MPL_FAKE_JAVA_ARGS="$ROOT/java.args" \
+  MPL_FAKE_JAVA_CONTROL_PATH="$ROOT/system/java_esckey" \
   MPL_FAKE_SATURN_ARGS="$ROOT/saturn.args" \
+  MPL_FAKE_SATURN_CONTROL_PATH="$ROOT/system/saturn_esckey" \
   MPL_FAKE_AMIXER_ARGS="$ROOT/amixer.args" \
   MPL_TEST_RA_SET_VOLUME="${MPL_TEST_RA_SET_VOLUME:-}" \
+  SDL_VIDEODRIVER=mali \
+  SDL_AUDIODRIVER=alsa \
+  SDL_NOMOUSE=1 \
   PATH="$ROOT/bin:$PATH" \
   sh "$SCRIPT"
 }
@@ -222,7 +281,18 @@ write_fake_java_launcher
 write_fake_saturn_launcher
 write_fake_amixer
 PSP_WORKDIR="$(cd "$ROOT/system/ppsspp" && pwd)"
+NDS_WORKDIR="$(cd "$ROOT/system/drastic" && pwd)"
+OPENBOR_WORKDIR="$(cd "$ROOT/system" && pwd)"
+PORTS_WORKDIR="$(cd "$ROOT/system" && pwd)"
+mkdir -p "$ROOT/system/saturn"
+SATURN_WORKDIR="$(cd "$ROOT/system/saturn" && pwd)"
+mkdir -p "$ROOT/system/emuJava"
+JAVA_WORKDIR="$(cd "$ROOT/system/emuJava" && pwd)"
 printf '6\n' >"$ROOT/system/openbor_volume"
+printf '0\n' >"$ROOT/system/nds_esckey"
+printf '0\n' >"$ROOT/system/saturn_esckey"
+printf '0\n' >"$ROOT/system/java_esckey"
+printf '0\n' >"$ROOT/system/ports_esckey"
 printf '6\n' >"$ROOT/volume.level"
 cat >"$ROOT/system/CORES.txt" <<EOF
 -GBA,mgba_libretro.so
@@ -354,14 +424,28 @@ run_script
 test ! -f "$ROOT/state/launch.request"
 grep -qx "cmd=savedir rom=$ROOT/mnt/sdcard/Roms/NDS/Ys.nds" "$ROOT/nds.args"
 grep -qx "cmd=run rom=$ROOT/mnt/sdcard/Roms/NDS/Ys.nds" "$ROOT/nds.args"
+grep -qx "cwd=$NDS_WORKDIR" "$ROOT/nds-runtime.args"
+grep -qx 'control_state=1' "$ROOT/nds-runtime.args"
+grep -qx 'sdl_video=' "$ROOT/nds-runtime.args"
+grep -qx 'sdl_audio=' "$ROOT/nds-runtime.args"
+grep -qx 'sdl_nomouse=' "$ROOT/nds-runtime.args"
+grep -qx '0' "$ROOT/system/nds_esckey"
 
-rm -f "$ROOT/psp.args"
+rm -f "$ROOT/psp.args" "$ROOT/amixer.args"
 write_request psp h700-standalone-psp "$ROOT/mnt/sdcard/Roms/PSP/Ridge.iso"
 run_script
 test ! -f "$ROOT/state/launch.request"
 grep -qx "cwd=$PSP_WORKDIR" "$ROOT/psp.args"
 grep -qx "rom=$ROOT/mnt/sdcard/Roms/PSP/Ridge.iso" "$ROOT/psp.args"
 grep -qx 'ld_preload=' "$ROOT/psp.args"
+grep -qx 'ld_library_path=/usr/lib32:/usr/lib:/mnt/vendor/lib' "$ROOT/psp.args"
+grep -qx 'sdl_video=' "$ROOT/psp.args"
+grep -qx 'sdl_audio=' "$ROOT/psp.args"
+grep -qx 'sdl_nomouse=' "$ROOT/psp.args"
+grep -qx -- '-q -c 0 set lineout volume 31' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set digital volume 63' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set LINEOUT on' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set SPK on' "$ROOT/amixer.args"
 
 printf 'RG28xx\n' >"$ROOT/system/board.ini"
 printf 'preload' >"$ROOT/system/libSDL2-preload.so"
@@ -371,20 +455,41 @@ run_script
 grep -qx "ld_preload=$ROOT/system/libSDL2-preload.so" "$ROOT/psp.args"
 rm -f "$ROOT/system/board.ini" "$ROOT/system/libSDL2-preload.so"
 
-rm -f "$ROOT/openbor.args"
+rm -f "$ROOT/openbor.args" "$ROOT/amixer.args"
 write_request openbor h700-standalone-openbor \
   "$ROOT/mnt/sdcard/Roms/OPENBOR/Final Fight.pak"
 run_script
 test ! -f "$ROOT/state/launch.request"
 grep -qx "setup=$ROOT/mnt/sdcard/Roms/OPENBOR/Final Fight.pak" "$ROOT/openbor.args"
 grep -qx "run=$ROOT/mnt/sdcard/Roms/OPENBOR/Final Fight.pak" "$ROOT/openbor.args"
+grep -qx "cwd=$OPENBOR_WORKDIR" "$ROOT/openbor.args"
+grep -qx 'ld_preload=' "$ROOT/openbor.args"
+grep -qx 'ld_library_path=/usr/lib32:/usr/lib:/mnt/vendor/lib' "$ROOT/openbor.args"
+grep -qx 'sdl_video=' "$ROOT/openbor.args"
+grep -qx 'sdl_audio=' "$ROOT/openbor.args"
+grep -qx 'sdl_nomouse=' "$ROOT/openbor.args"
+grep -qx -- '-q -c 0 set lineout volume 31' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set digital volume 63' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set LINEOUT on' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set SPK on' "$ROOT/amixer.args"
 
-rm -f "$ROOT/ports.args" "$ROOT/ports_joy.args"
+rm -f "$ROOT/ports.args" "$ROOT/ports_joy.args" "$ROOT/amixer.args"
 write_request ports h700-standalone-ports "$ROOT/mnt/sdcard/Roms/PORTS/Balatro.sh"
 run_script
 test ! -f "$ROOT/state/launch.request"
 grep -qx "script=$ROOT/mnt/sdcard/Roms/PORTS/Balatro.sh" "$ROOT/ports.args"
 grep -qx 'ld_preload=' "$ROOT/ports.args"
+grep -qx 'ld_library_path=/usr/lib32:/usr/lib:/mnt/vendor/lib' "$ROOT/ports.args"
+grep -qx "cwd=$PORTS_WORKDIR" "$ROOT/ports.args"
+grep -qx 'control_state=1' "$ROOT/ports.args"
+grep -qx 'sdl_video=' "$ROOT/ports.args"
+grep -qx 'sdl_audio=' "$ROOT/ports.args"
+grep -qx 'sdl_nomouse=' "$ROOT/ports.args"
+grep -qx '0' "$ROOT/system/ports_esckey"
+grep -qx -- '-q -c 0 set lineout volume 16' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set digital volume 63' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set LINEOUT on' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set SPK on' "$ROOT/amixer.args"
 test ! -f "$ROOT/ports_joy.args"
 
 printf 'RG34xx\n' >"$ROOT/system/board.ini"
@@ -404,12 +509,24 @@ write_request ports h700-standalone-ports "$ROOT/mnt/sdcard/Roms/PORTS/readme.tx
 expect_failure
 grep -q 'unsupported_extension platform=ports' "$ROOT/logs/h700-launch.log"
 
-rm -f "$ROOT/java.args"
+printf '4\n' >"$ROOT/system/openbor_volume"
+rm -f "$ROOT/java.args" "$ROOT/amixer.args"
 write_request java h700-standalone-java "$ROOT/mnt/sdcard/Roms/JAVA/240x320/DoomRPG.jar"
 run_script
 test ! -f "$ROOT/state/launch.request"
 grep -qx "rom=$ROOT/mnt/sdcard/Roms/JAVA/240x320/DoomRPG.jar" "$ROOT/java.args"
 grep -qx 'ld_preload=' "$ROOT/java.args"
+grep -qx 'ld_library_path=/usr/lib32:/usr/lib:/mnt/vendor/lib' "$ROOT/java.args"
+grep -qx "cwd=$JAVA_WORKDIR" "$ROOT/java.args"
+grep -qx 'control_state=1' "$ROOT/java.args"
+grep -qx 'sdl_video=' "$ROOT/java.args"
+grep -qx 'sdl_audio=' "$ROOT/java.args"
+grep -qx 'sdl_nomouse=' "$ROOT/java.args"
+grep -qx '0' "$ROOT/system/java_esckey"
+grep -qx -- '-q -c 0 set lineout volume 19' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set digital volume 63' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set LINEOUT on' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set SPK on' "$ROOT/amixer.args"
 
 printf 'not-java' >"$ROOT/mnt/sdcard/Roms/JAVA/240x320/readme.txt"
 write_request java h700-standalone-java "$ROOT/mnt/sdcard/Roms/JAVA/240x320/readme.txt"
@@ -435,6 +552,13 @@ grep -qx 'script=setSaturn' "$ROOT/saturn.args"
 grep -qx 'mode=HLE' "$ROOT/saturn.args"
 grep -qx "rom=$ROOT/mnt/sdcard/Roms/SATURN/Nights.chd" "$ROOT/saturn.args"
 grep -qx 'ld_preload=' "$ROOT/saturn.args"
+grep -qx 'ld_library_path=/usr/lib32:/usr/lib:/mnt/vendor/lib' "$ROOT/saturn.args"
+grep -qx "cwd=$SATURN_WORKDIR" "$ROOT/saturn.args"
+grep -qx 'control_state=1' "$ROOT/saturn.args"
+grep -qx 'sdl_video=' "$ROOT/saturn.args"
+grep -qx 'sdl_audio=' "$ROOT/saturn.args"
+grep -qx 'sdl_nomouse=' "$ROOT/saturn.args"
+grep -qx '0' "$ROOT/system/saturn_esckey"
 if grep -qx 'script=yabasanshiro' "$ROOT/saturn.args"; then
   echo "Saturn default must use vendor setSaturn.sh" >&2
   exit 1
@@ -468,7 +592,7 @@ if grep -qx 'arg=-f' "$ROOT/saturn.args"; then
   echo "Saturn default must not force fullscreen" >&2
   exit 1
 fi
-grep -qx -- '-q -c 0 set lineout volume 22' "$ROOT/amixer.args"
+grep -qx -- '-q -c 0 set lineout volume 25' "$ROOT/amixer.args"
 grep -qx -- '-q -c 0 set digital volume 63' "$ROOT/amixer.args"
 grep -qx -- '-q -c 0 set LINEOUT on' "$ROOT/amixer.args"
 grep -qx -- '-q -c 0 set SPK on' "$ROOT/amixer.args"

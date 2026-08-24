@@ -453,6 +453,8 @@ int main() {
   assert(flyer->collection_title == "飞机街机");
   assert(flyer->collection_id == "collection:飞机街机");
   assert(flyer->source == "pegasus");
+  assert(flyer->display_title == "1988-1944 循环的征服者/Capcom");
+  assert(flyer->multi_file_entry);
   assert(flyer->publisher == "Capcom");
   assert(flyer->genre == "射击-飞机竖版");
   assert(flyer->release == "1988");
@@ -471,6 +473,7 @@ int main() {
   assert(ikaruga->collection_title == "NAOMI");
   assert(ikaruga->collection_id == "collection:NAOMI");
   assert(ikaruga->source == "pegasus");
+  assert(ikaruga->display_title == "ikaruga/Treasure");
   assert(ikaruga->publisher == "Treasure");
   for (const Game &game : first.library.games) {
     if (game.platform_id == "dreamcast" || game.platform_id == "fbneo" ||
@@ -496,6 +499,7 @@ int main() {
   const Game *cached_flyer = FindByTitle(second.library.games, "1944 循环的征服者");
   assert(cached_flyer);
   assert(cached_flyer->collection_title == "飞机街机");
+  assert(cached_flyer->display_title == "1988-1944 循环的征服者/Capcom");
   assert(cached_flyer->primary_target.label == "1944.zip");
   assert(cached_flyer->alternate_targets.size() == 1);
   const Game *cached_aerofgt = FindByTitle(second.library.games, "音速战机");
@@ -506,6 +510,7 @@ int main() {
   const Game *cached_ikaruga = FindByTitle(second.library.games, "斑鸠");
   assert(cached_ikaruga);
   assert(cached_ikaruga->collection_title == "NAOMI");
+  assert(cached_ikaruga->display_title == "ikaruga/Treasure");
   const Game *cached_hd_pack = FindByTitle(second.library.games, "HD Pack");
   assert(cached_hd_pack);
   assert(cached_hd_pack->platform_id == "fc_hd");

@@ -30,6 +30,7 @@ struct DesktopUiOptions {
   Library library;
   LauncherAdapter *launch_adapter = nullptr;
   SystemService *system_service = nullptr;
+  std::function<void()> audio_device_opened_callback;
   std::function<bool()> clear_scan_cache;
   int successful_launch_exit_code = 20;
   int suspend_exit_code = 21;
