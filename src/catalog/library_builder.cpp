@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "catalog/arcade_name_database.h"
 #include "catalog/launch_hint_resolver.h"
 #include "catalog/path.h"
 #include "catalog/providers/anbernic_provider.h"
@@ -24,12 +25,14 @@ namespace mpl {
 
 namespace {
 
-constexpr int kScanCacheVersion = 20;
+constexpr int kScanCacheVersion = 26;
 
 struct CachedRoot {
   std::string platform_id;
   std::string root;
   std::int64_t mtime = 0;
+  std::string arcade_name_database_path;
+  std::int64_t arcade_name_database_mtime = 0;
 };
 
 struct CachedLibrary {
@@ -129,10 +132,18 @@ CachedLibrary LoadScanCache(const std::string &cache_path) {
     if (kind == "root") {
       CachedRoot root;
       std::string mtime;
+      std::string game_count;
+      std::string arcade_name_database_mtime;
       if (std::getline(row, root.platform_id, '\t') &&
           std::getline(row, root.root, '\t') &&
           std::getline(row, mtime, '\t')) {
         root.mtime = std::atoll(mtime.c_str());
+        std::getline(row, game_count, '\t');
+        std::getline(row, root.arcade_name_database_path, '\t');
+        if (std::getline(row, arcade_name_database_mtime, '\t')) {
+          root.arcade_name_database_mtime =
+              std::atoll(arcade_name_database_mtime.c_str());
+        }
         cache.roots.push_back(std::move(root));
       }
     } else if (kind == "game") {
@@ -204,10 +215,18 @@ CachedRootSummary LoadScanCacheRootSummary(const std::string &cache_path) {
     if (kind == "root") {
       CachedRoot root;
       std::string mtime;
+      std::string game_count;
+      std::string arcade_name_database_mtime;
       if (std::getline(row, root.platform_id, '\t') &&
           std::getline(row, root.root, '\t') &&
           std::getline(row, mtime, '\t')) {
         root.mtime = std::atoll(mtime.c_str());
+        std::getline(row, game_count, '\t');
+        std::getline(row, root.arcade_name_database_path, '\t');
+        if (std::getline(row, arcade_name_database_mtime, '\t')) {
+          root.arcade_name_database_mtime =
+              std::atoll(arcade_name_database_mtime.c_str());
+        }
         summary.roots.push_back(std::move(root));
       }
     } else if (kind == "game") {
@@ -217,24 +236,32 @@ CachedRootSummary LoadScanCacheRootSummary(const std::string &cache_path) {
   return summary;
 }
 
-bool CachedRootIsFresh(const CachedLibrary &cache, const std::string &platform_id,
+bool CachedRootIsFresh(const CachedLibrary &cache, const Platform &platform,
                        const std::string &root) {
   const std::int64_t current_mtime = PortableModifiedTime(fs::u8path(root));
+  const std::int64_t current_database_mtime =
+      PortableModifiedTime(fs::u8path(platform.arcade_name_database_path));
   for (const CachedRoot &cached : cache.roots) {
-    if (cached.platform_id == platform_id && cached.root == root &&
-        cached.mtime == current_mtime) {
+    if (cached.platform_id == platform.id && cached.root == root &&
+        cached.mtime == current_mtime &&
+        cached.arcade_name_database_path == platform.arcade_name_database_path &&
+        cached.arcade_name_database_mtime == current_database_mtime) {
       return true;
     }
   }
   return false;
 }
 
-bool CachedRootIsFresh(const CachedRootSummary &cache, const std::string &platform_id,
+bool CachedRootIsFresh(const CachedRootSummary &cache, const Platform &platform,
                        const std::string &root) {
   const std::int64_t current_mtime = PortableModifiedTime(fs::u8path(root));
+  const std::int64_t current_database_mtime =
+      PortableModifiedTime(fs::u8path(platform.arcade_name_database_path));
   for (const CachedRoot &cached : cache.roots) {
-    if (cached.platform_id == platform_id && cached.root == root &&
-        cached.mtime == current_mtime) {
+    if (cached.platform_id == platform.id && cached.root == root &&
+        cached.mtime == current_mtime &&
+        cached.arcade_name_database_path == platform.arcade_name_database_path &&
+        cached.arcade_name_database_mtime == current_database_mtime) {
       return true;
     }
   }
@@ -327,6 +354,48 @@ void AppendWarnings(const ScanResult &result, LibraryBuildReport *report) {
                           result.warnings.end());
 }
 
+void ApplyArcadeNames(const ArcadeNameDatabase *database, ScanResult *result) {
+  if (!database || !result) return;
+  for (Game &game : result->games) database->Apply(&game);
+}
+
+bool IsEmptyArchive(const Game &game) {
+  const fs::path path = fs::u8path(game.primary_target.path);
+  const std::string extension = LowerAscii(path.extension().u8string());
+  if (extension != ".zip" && extension != ".7z") return false;
+
+  std::error_code error;
+  if (!fs::is_regular_file(path, error) || error) return false;
+  error.clear();
+  return fs::file_size(path, error) == 0 && !error;
+}
+
+void RemoveEmptyArchives(ScanResult *result) {
+  if (!result) return;
+  result->games.erase(
+      std::remove_if(result->games.begin(), result->games.end(), IsEmptyArchive),
+      result->games.end());
+}
+
+bool IsArcadePlatform(const std::string &platform_id) {
+  for (const char *id : {"atomiswave", "cps1", "cps2", "cps3", "fbneo", "hbmame",
+                         "mame", "naomi", "neogeo", "pgm2", "varcade"}) {
+    if (platform_id == id) return true;
+  }
+  return false;
+}
+
+void RemoveArcadeSupportArchives(const Platform &platform, ScanResult *result) {
+  if (!result || !IsArcadePlatform(platform.id)) return;
+  result->games.erase(
+      std::remove_if(result->games.begin(), result->games.end(), [](const Game &game) {
+        const std::string filename =
+            LowerAscii(fs::u8path(game.primary_target.path).filename().u8string());
+        return filename == "neogeo.zip" || filename == "pgm.zip";
+      }),
+      result->games.end());
+}
+
 bool HasMetadataFile(const fs::path &root, const char *filename) {
   std::error_code error;
   if (fs::is_regular_file(root, error)) {
@@ -365,7 +434,8 @@ void WriteScanCache(const Library &library, const std::string &cache_path,
     std::ofstream out(temporary, std::ios::trunc);
     if (!out) return;
     out << "# mpl_scan_cache_version=" << kScanCacheVersion << '\n';
-    out << "# root\tplatform_id\troot\troot_mtime\tgame_count\n";
+    out << "# root\tplatform_id\troot\troot_mtime\tgame_count"
+        << "\tarcade_name_database_path\tarcade_name_database_mtime\n";
     for (const Platform &platform : library.platforms) {
       for (const std::string &root_text : platform.rom_directories) {
         int count = 0;
@@ -376,7 +446,9 @@ void WriteScanCache(const Library &library, const std::string &cache_path,
           }
         }
         out << "root\t" << platform.id << '\t' << CleanField(root_text) << '\t'
-            << PortableModifiedTime(fs::u8path(root_text)) << '\t' << count << '\n';
+            << PortableModifiedTime(fs::u8path(root_text)) << '\t' << count << '\t'
+            << CleanField(platform.arcade_name_database_path) << '\t'
+            << PortableModifiedTime(fs::u8path(platform.arcade_name_database_path)) << '\n';
         ++report->cache_records_written;
       }
     }
@@ -433,6 +505,19 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
   AnbernicProvider anbernic_provider;
   EmulationStationProvider es_provider;
   PegasusProvider pegasus_provider;
+  std::unordered_map<std::string, ArcadeNameDatabase> arcade_name_databases;
+  for (const Platform &platform : platforms) {
+    if (platform.arcade_name_database_path.empty() ||
+        arcade_name_databases.find(platform.arcade_name_database_path) !=
+            arcade_name_databases.end()) {
+      continue;
+    }
+    ArcadeNameDatabase database;
+    if (database.Load(platform.arcade_name_database_path)) {
+      arcade_name_databases.emplace(platform.arcade_name_database_path,
+                                    std::move(database));
+    }
+  }
   std::unordered_map<std::string, size_t> index_by_id;
   const int total_steps = std::max(1, static_cast<int>(platforms.size()) * 4);
   int completed_steps = 0;
@@ -446,12 +531,15 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
   for (const Platform &platform : platforms) {
     const auto platform_start = Clock::now();
     report_progress(platform, "准备");
+    const ArcadeNameDatabase *arcade_names = nullptr;
+    const auto database = arcade_name_databases.find(platform.arcade_name_database_path);
+    if (database != arcade_name_databases.end()) arcade_names = &database->second;
     std::vector<ScanRoot> roots;
     roots.reserve(platform.rom_directories.size());
     std::unordered_set<std::string> cached_roots;
     int platform_cached_games = 0;
     for (const std::string &directory : platform.rom_directories) {
-      if (CachedRootIsFresh(cache, platform.id, directory)) {
+      if (CachedRootIsFresh(cache, platform, directory)) {
         cached_roots.insert(directory);
         ++report.skipped_roots;
       } else {
@@ -503,7 +591,10 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
 
     report_progress(platform, "读取天马数据");
     const auto pegasus_start = Clock::now();
-    const ScanResult pegasus = pegasus_provider.Scan(platform, pegasus_roots);
+    ScanResult pegasus = pegasus_provider.Scan(platform, pegasus_roots);
+    RemoveEmptyArchives(&pegasus);
+    RemoveArcadeSupportArchives(platform, &pegasus);
+    ApplyArcadeNames(arcade_names, &pegasus);
     const long long pegasus_ms = ElapsedMs(pegasus_start);
     report.pegasus_games += static_cast<int>(pegasus.games.size());
     AppendWarnings(pegasus, &report);
@@ -512,7 +603,10 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
 
     report_progress(platform, "扫描ROM");
     const auto rom_start = Clock::now();
-    const ScanResult roms = rom_provider.Scan(platform, fallback_roots);
+    ScanResult roms = rom_provider.Scan(platform, fallback_roots);
+    RemoveEmptyArchives(&roms);
+    RemoveArcadeSupportArchives(platform, &roms);
+    ApplyArcadeNames(arcade_names, &roms);
     const long long rom_ms = ElapsedMs(rom_start);
     report.rom_directory_games += static_cast<int>(roms.games.size());
     AppendWarnings(roms, &report);
@@ -521,7 +615,10 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
 
     report_progress(platform, "读取ES数据");
     const auto es_start = Clock::now();
-    const ScanResult es = es_provider.Scan(platform, es_roots);
+    ScanResult es = es_provider.Scan(platform, es_roots);
+    RemoveEmptyArchives(&es);
+    RemoveArcadeSupportArchives(platform, &es);
+    ApplyArcadeNames(arcade_names, &es);
     const long long es_ms = ElapsedMs(es_start);
     report.emulationstation_games += static_cast<int>(es.games.size());
     AppendWarnings(es, &report);
@@ -530,7 +627,10 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
 
     report_progress(platform, "读取图片数据");
     const auto anbernic_start = Clock::now();
-    const ScanResult anbernic = anbernic_provider.Scan(platform, fallback_roots);
+    ScanResult anbernic = anbernic_provider.Scan(platform, fallback_roots);
+    RemoveEmptyArchives(&anbernic);
+    RemoveArcadeSupportArchives(platform, &anbernic);
+    ApplyArcadeNames(arcade_names, &anbernic);
     const long long anbernic_ms = ElapsedMs(anbernic_start);
     report.anbernic_games += static_cast<int>(anbernic.games.size());
     AppendWarnings(anbernic, &report);
@@ -601,7 +701,7 @@ bool LibraryBuilder::CanRestoreFromCache(const std::vector<Platform> &platforms,
   for (const Platform &platform : platforms) {
     for (const std::string &directory : platform.rom_directories) {
       ++checked_roots;
-      if (!CachedRootIsFresh(cache, platform.id, directory)) {
+      if (!CachedRootIsFresh(cache, platform, directory)) {
         ++stale_roots;
         fresh = false;
       }

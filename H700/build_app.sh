@@ -6,8 +6,9 @@ REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 APP_ID="${MPL_H700_APP_ID:-RGFrontend}"
 ENTRY_NAME="${MPL_H700_ENTRY_NAME:-RGFrontend}"
+FORCE_STOCK_ROUTE="${MPL_H700_FORCE_STOCK_ROUTE:-0}"
 BINARY_NAME="${MPL_H700_BINARY_NAME:-mpl_h700_frontend}"
-VERSION="${MPL_H700_VERSION:-1.0.1}"
+VERSION="${MPL_H700_VERSION:-1.0.2}"
 SYSROOT="${MPL_H700_SYSROOT:-$SCRIPT_DIR/sysroot}"
 APP_ICON="${MPL_H700_APP_ICON:-$SCRIPT_DIR/assets/apps/RGFrontend.png}"
 CLASSIC_ICON="${MPL_H700_CLASSIC_ICON:-$SCRIPT_DIR/assets/apps/classic_icon.png}"
@@ -30,6 +31,7 @@ ICON_PATH="$STAGE_ROOT/Roms/APPS/Imgs/$ENTRY_NAME.png"
 RUNTIME_ICON_PATH="$RUNTIME_DIR/assets/apps/RGFrontend.png"
 RUNTIME_CLASSIC_ICON_PATH="$RUNTIME_DIR/assets/apps/classic_icon.png"
 LICENSE_DIR="$RUNTIME_DIR/licenses"
+ARCHIVE_PATH="$DIST_DIR/$APP_ID-H700-$VERSION.zip"
 
 fail() {
   printf 'error: %s\n' "$*" >&2
@@ -40,6 +42,10 @@ fail() {
 [ -d "$SYSROOT/usr/include" ] || fail "sysroot is missing usr/include: $SYSROOT"
 [ -f "$APP_ICON" ] || fail "app icon not found: $APP_ICON"
 command -v "$CXX" >/dev/null 2>&1 || fail "cross compiler not found: $CXX"
+case "$FORCE_STOCK_ROUTE" in
+  0|1) ;;
+  *) fail "MPL_H700_FORCE_STOCK_ROUTE must be 0 or 1" ;;
+esac
 
 case "$CXX" in
   *clang++*)
@@ -74,6 +80,7 @@ SOURCES="
 $REPO_ROOT/src/app/main.cpp
 $REPO_ROOT/src/app/demo_library.cpp
 $REPO_ROOT/src/app/desktop_ui_app.cpp
+$REPO_ROOT/src/catalog/arcade_name_database.cpp
 $REPO_ROOT/src/catalog/launch_hint_resolver.cpp
 $REPO_ROOT/src/catalog/library_builder.cpp
 $REPO_ROOT/src/catalog/path.cpp
@@ -144,17 +151,27 @@ if command -v "$READ_ELF" >/dev/null 2>&1; then
   "$READ_ELF" -h "$RUNTIME_DIR/$BINARY_NAME" >/dev/null
 fi
 
-cat >"$ENTRY_PATH" <<EOF
+if [ "$FORCE_STOCK_ROUTE" = "1" ]; then
+  cat >"$ENTRY_PATH" <<EOF
+#!/bin/sh
+export MPL_H700_MOD_RA_LAUNCHER=/tmp/rgfrontend-force-stock-no-mod
+APP_DIR="\$(CDPATH= cd -- "\$(dirname -- "\$0")/$APP_ID" && pwd)"
+exec "\$APP_DIR/run_frontend.sh" "\$@"
+EOF
+else
+  cat >"$ENTRY_PATH" <<EOF
 #!/bin/sh
 APP_DIR="\$(CDPATH= cd -- "\$(dirname -- "\$0")/$APP_ID" && pwd)"
 exec "\$APP_DIR/run_frontend.sh" "\$@"
 EOF
+fi
 chmod 755 "$ENTRY_PATH"
 
 cat >"$RUNTIME_DIR/build-info.txt" <<EOF
 app_id=$APP_ID
 entry_name=$ENTRY_NAME
 version=$VERSION
+force_stock_route=$FORCE_STOCK_ROUTE
 binary=$BINARY_NAME
 sysroot=$SYSROOT
 icon=Roms/APPS/Imgs/$ENTRY_NAME.png
@@ -166,4 +183,12 @@ autostart_launch=autostart_launch.sh
 license_dir=licenses
 EOF
 
+command -v zip >/dev/null 2>&1 || fail "zip is required to create the release archive"
+rm -f "$ARCHIVE_PATH"
+(
+  cd "$STAGE_ROOT"
+  zip -q -r "$ARCHIVE_PATH" Roms
+)
+
 printf 'H700 app stage ready: %s\n' "$STAGE_ROOT"
+printf 'H700 release archive ready: %s\n' "$ARCHIVE_PATH"

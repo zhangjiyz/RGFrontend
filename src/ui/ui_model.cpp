@@ -1,6 +1,8 @@
 #include "ui/ui_model.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <map>
 
 namespace mpl {
@@ -13,6 +15,21 @@ constexpr int kVisibleThemeRows = 7;
 constexpr int kVisibleTargetRows = 5;
 constexpr int kVisibleCoreRows = 5;
 constexpr int kFontSizeLevelCount = 6;
+constexpr double kPegasusCoverAspect = 1.42;
+constexpr int kSearchKeyboardClearIndex = 29;
+constexpr int kSearchKeyboardSpaceIndex = 37;
+constexpr int kSearchKeyboardBackspaceIndex = 39;
+constexpr const char *kSearchKeyboardLabels[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P",
+    "A", "S", "D", "F", "G", "H", "J", "K", "L", "清除",
+    "Z", "X", "C", "V", "B", "N", "M", "空格", ".", "删除",
+    "确定",
+};
+static_assert(static_cast<int>(sizeof(kSearchKeyboardLabels) /
+                               sizeof(kSearchKeyboardLabels[0])) ==
+                  kSearchKeyboardOkIndex + 1,
+              "search keyboard labels must match keyboard indices");
 
 int ClampIndex(int value, int minimum, int maximum) {
   return std::max(minimum, std::min(value, maximum));
@@ -21,6 +38,29 @@ int ClampIndex(int value, int minimum, int maximum) {
 int ClampCycle(int value, int count) {
   if (count <= 0) return 0;
   return (value % count + count) % count;
+}
+
+std::string LowerAscii(std::string value) {
+  for (char &ch : value) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  return value;
+}
+
+bool ContainsSearchQuery(const Game &game, const std::string &query) {
+  if (query.empty()) return true;
+  const std::string lower_query = LowerAscii(query);
+  const auto contains = [&](const std::string &value) {
+    return LowerAscii(value).find(lower_query) != std::string::npos;
+  };
+  if (contains(game.title) || contains(game.display_title) ||
+      contains(game.description) || contains(game.primary_target.path)) {
+    return true;
+  }
+  for (const LaunchTarget &target : game.alternate_targets) {
+    if (contains(target.path) || contains(target.label)) return true;
+  }
+  return false;
 }
 
 UiGridSize GridSizeFromInt(int value) {
@@ -36,8 +76,6 @@ UiGridSize GridSizeFromInt(int value) {
 
 UiBgmMode BgmModeFromInt(int value) {
   switch (value) {
-    case 0:
-      return UiBgmMode::Music;
     case 2:
       return UiBgmMode::Muted;
     default:
@@ -59,8 +97,6 @@ int GridSizeToInt(UiGridSize value) {
 
 int BgmModeToInt(UiBgmMode value) {
   switch (value) {
-    case UiBgmMode::Music:
-      return 0;
     case UiBgmMode::Muted:
       return 2;
     case UiBgmMode::GameAudio:
@@ -103,26 +139,53 @@ int GridColumnsForPreferences(const UiPreferences &preferences) {
   return columns + (preferences.fullscreen_grid ? 1 : 0);
 }
 
-int GridRowsForPreferences(const UiPreferences &preferences, const UiLayout &layout) {
-  const int columns = GridColumnsForPreferences(preferences);
+bool IsPegasusGame(const Game &game) {
+  return game.source == "pegasus" ||
+         game.metadata_path.find("metadata.pegasus.txt") != std::string::npos;
+}
+
+bool UsesPegasusGridGeometry(const UiSession &session) {
+  if (session.visible_game_indices.empty()) return false;
+  int pegasus_count = 0;
+  for (const std::size_t index : session.visible_game_indices) {
+    if (IsPegasusGame(session.library.games[index])) ++pegasus_count;
+  }
+  return pegasus_count * 2 >= static_cast<int>(session.visible_game_indices.size());
+}
+
+int GridRowsForSession(const UiSession &session, const UiLayout &layout) {
+  const int columns = GridColumnsForPreferences(session.preferences);
   const bool compact_four_three = layout.mode == LayoutMode::Compact &&
                                   layout.viewport_width <= 660 &&
                                   layout.viewport_height >= 470;
-  const int grid_width = preferences.fullscreen_grid
-                             ? (compact_four_three ? 640 : 720)
-                             : (compact_four_three ? 400 : 480);
-  int grid_height = 435;
-  if (layout.mode == LayoutMode::Square && layout.viewport_height >= 700) {
-    grid_height = 675;
+  const int canvas_width = compact_four_three ? 640 : 720;
+  const int canvas_height = layout.mode == LayoutMode::Square &&
+                                    layout.viewport_height >= 700
+                                ? 720
+                                : 480;
+  const int grid_width = session.preferences.fullscreen_grid
+                             ? canvas_width
+                             : canvas_width - 240;
+  const int grid_height = session.preferences.fullscreen_grid
+                              ? canvas_height
+                              : canvas_height - 45;
+  if (UsesPegasusGridGeometry(session)) {
+    constexpr int inset = 12;
+    constexpr int gap = 2;
+    const int card_width = std::max(
+        1, (grid_width - inset * 2 - gap * (columns - 1)) / columns);
+    const int card_height = std::max(
+        1, static_cast<int>(std::lround(card_width * kPegasusCoverAspect)));
+    return std::max(1, (grid_height - inset * 2) / (card_height + gap));
   }
-  const int inset = preferences.fullscreen_grid ? 18 : 16;
+  const int inset = session.preferences.fullscreen_grid ? 18 : 16;
   const int card_size = std::max(1, (grid_width - inset * 2) / columns);
   return std::max(1, (grid_height - inset * 2) / card_size);
 }
 
-int GridPageSizeForPreferences(const UiPreferences &preferences, const UiLayout &layout) {
-  return std::max(1, GridColumnsForPreferences(preferences) *
-                         GridRowsForPreferences(preferences, layout));
+int GridPageSizeForSession(const UiSession &session, const UiLayout &layout) {
+  return std::max(1, GridColumnsForPreferences(session.preferences) *
+                         GridRowsForSession(session, layout));
 }
 
 int TargetCount(const Game *game) {
@@ -159,19 +222,22 @@ std::string DefaultCoreHintForPlatform(const Platform &platform) {
   const std::string &id = platform.id;
   if (id == "gba") return "mgba_libretro.so";
   if (id == "gb" || id == "gbc") return "gambatte_libretro.so";
-  if (id == "fc" || id == "fds") return "fceumm_libretro.so";
-  if (id == "sfc") return "snes9x2005_plus_libretro.so";
+  if (id == "fc") return "fceumm_libretro.so";
+  if (id == "fds") return "nestopia_libretro.so";
+  if (id == "sfc") return "snes9x_libretro.so";
   if (id == "md" || id == "mdcd" || id == "sms" || id == "gg") {
     return "genesis_plus_gx_libretro.so";
   }
   if (id == "sega32x") return "picodrive_libretro.so";
   if (id == "ps") return "pcsx_rearmed_libretro.so";
-  if (id == "n64") return "mupen64plus_next_libretro.so";
-  if (id == "fbneo" || id == "cps1" || id == "cps2" ||
-      id == "cps3" || id == "neogeo") {
-    return "fbalpha2012_libretro.so";
+  if (id == "n64") return "parallel_n64_libretro.so";
+  if (id == "cps1" || id == "cps2" || id == "cps3") {
+    return "fbalpha_libretro.so";
   }
-  if (id == "mame") return "mame2022xtreme_libretro.so";
+  if (id == "fbneo") return "fbneo_libretro.so";
+  if (id == "hbmame") return "nebularm_legacy_libretro.so";
+  if (id == "neogeo") return "fbalpha2012_neogeo_libretro.so";
+  if (id == "mame") return "mame2003_plus_libretro.so";
   if (id == "varcade") return "fbneo_libretro.so";
   return "";
 }
@@ -199,7 +265,7 @@ std::vector<UiCoreOption> PlatformCoreOptions(const Platform &platform) {
     AddCore(&options, "tgbdual_libretro.so", "TGB Dual");
     AddCore(&options, "gearboy_libretro.so", "Gearboy");
     AddCore(&options, "sameboy_libretro.so", "SameBoy");
-  } else if (id == "fc" || id == "fds" || id == "fc_hd") {
+  } else if (id == "fc" || id == "fds") {
     AddCore(&options, "fceumm_libretro.so", "FCEUmm");
     AddCore(&options, "nestopia_libretro.so", "Nestopia");
     AddCore(&options, "mesen_libretro.so", "Mesen");
@@ -225,6 +291,7 @@ std::vector<UiCoreOption> PlatformCoreOptions(const Platform &platform) {
   } else if (id == "fbneo" || id == "cps1" || id == "cps2" ||
              id == "cps3" || id == "neogeo") {
     AddCore(&options, "fbneo_libretro.so", "FinalBurn Neo");
+    AddCore(&options, "fbalpha_libretro.so", "FB Alpha");
     AddCore(&options, "fbalpha2012_libretro.so", "FB Alpha 2012");
     AddCore(&options, "mame2003_xtreme_libretro.so", "MAME 2003");
     AddCore(&options, "mame2003_plus_libretro.so", "MAME 2003-Plus");
@@ -353,7 +420,8 @@ void RebuildVisibleGames(UiSession *session, const std::string &preferred_game_i
 
   const UiNavItem &nav = session->navigation[session->active_nav_index];
   for (std::size_t index = 0; index < session->library.games.size(); ++index) {
-    if (GameVisibleForNav(session->library.games[index], nav)) {
+    if (GameVisibleForNav(session->library.games[index], nav) &&
+        ContainsSearchQuery(session->library.games[index], session->search_query)) {
       session->visible_game_indices.push_back(index);
     }
   }
@@ -390,14 +458,14 @@ void RebuildVisibleGames(UiSession *session, const std::string &preferred_game_i
 void EnsureSelectionVisible(UiSession *session, const UiLayout &layout) {
   if (!session || session->visible_game_indices.empty()) return;
   const int columns = GridColumnsForPreferences(session->preferences);
-  const int rows = GridRowsForPreferences(session->preferences, layout);
+  const int rows = GridRowsForSession(*session, layout);
   const int selected_row = session->selected_visible_index / columns;
   int scroll_row = std::max(0, session->scroll_offset / columns);
   if (selected_row < scroll_row) {
     scroll_row = selected_row;
   }
-  // The renderer keeps one extra clipped row below the fully visible rows. Let
-  // that row become the bottom selection row before advancing the viewport.
+  // Keep one clipped row available so downward navigation can stay anchored
+  // against the bottom edge while the selection remains visible.
   if (selected_row > scroll_row + rows) {
     scroll_row = selected_row - rows;
   }
@@ -470,7 +538,63 @@ void MoveNav(UiSession *session, int delta) {
   RebuildVisibleGames(session);
 }
 
+void ClearSearchText(UiSession *session) {
+  if (!session || session->search_query.empty()) return;
+  session->search_query.clear();
+  session->scroll_offset = 0;
+  RebuildVisibleGames(session);
+}
+
+void MoveSearchKeyboard(UiSession *session, UiAction action) {
+  if (!session) return;
+  int &index = session->search_keyboard_index;
+  index = ClampIndex(index, 0, kSearchKeyboardOkIndex);
+  if (index == kSearchKeyboardOkIndex) {
+    if (action == UiAction::Up) {
+      index = kSearchKeyboardGridKeyCount - kSearchKeyboardColumns / 2;
+    }
+    return;
+  }
+
+  const int column = index % kSearchKeyboardColumns;
+  if (action == UiAction::Left && column > 0) {
+    --index;
+  } else if (action == UiAction::Right && column + 1 < kSearchKeyboardColumns) {
+    ++index;
+  } else if (action == UiAction::Up && index >= kSearchKeyboardColumns) {
+    index -= kSearchKeyboardColumns;
+  } else if (action == UiAction::Down) {
+    if (index >= kSearchKeyboardGridKeyCount - kSearchKeyboardColumns) {
+      index = kSearchKeyboardOkIndex;
+    } else {
+      index += kSearchKeyboardColumns;
+    }
+  }
+}
+
+void ActivateSearchKeyboardKey(UiSession *session) {
+  if (!session) return;
+  const int index = ClampIndex(session->search_keyboard_index, 0,
+                               kSearchKeyboardOkIndex);
+  if (index == kSearchKeyboardOkIndex) {
+    session->search_active = false;
+  } else if (index == kSearchKeyboardClearIndex) {
+    ClearSearchText(session);
+  } else if (index == kSearchKeyboardBackspaceIndex) {
+    BackspaceSearchText(session);
+  } else if (index == kSearchKeyboardSpaceIndex) {
+    AppendSearchText(session, " ");
+  } else {
+    AppendSearchText(session, kSearchKeyboardLabels[index]);
+  }
+}
+
 }  // namespace
+
+std::string SearchKeyboardKeyLabel(int index) {
+  if (index < 0 || index > kSearchKeyboardOkIndex) return {};
+  return kSearchKeyboardLabels[index];
+}
 
 UiSession CreateUiSession(Library library, const UiState &state, bool include_empty_platforms) {
   UiSession session;
@@ -563,6 +687,7 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
     session->menu_chord_used = false;
     if (open_menu) {
       if (session->view == UiView::Library) {
+        session->search_active = false;
         session->view = UiView::Settings;
         session->settings_selected_index = 0;
         session->settings_scroll_offset = 0;
@@ -584,6 +709,34 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
 
   if (action == UiAction::Power) {
     result.intent = UiIntent::SuspendSystem;
+    return result;
+  }
+
+  if (action == UiAction::Search && session->view == UiView::Library) {
+    session->search_active = true;
+    session->search_keyboard_index = 0;
+    return result;
+  }
+
+  if (session->search_active) {
+    if (action == UiAction::Up || action == UiAction::Down ||
+        action == UiAction::Left || action == UiAction::Right) {
+      MoveSearchKeyboard(session, action);
+    } else if (action == UiAction::Confirm) {
+      ActivateSearchKeyboardKey(session);
+    } else if (action == UiAction::ToggleFavorite) {
+      BackspaceSearchText(session);
+    } else if (action == UiAction::OpenCoreSelect || action == UiAction::Back) {
+      session->search_active = false;
+    }
+    return result;
+  }
+
+  if (!session->search_active && session->view == UiView::Library &&
+      !session->search_query.empty() && action == UiAction::Back) {
+    ClearSearchText(session);
+    session->osd_text = "搜索已清除";
+    session->osd_frames_remaining = 100;
     return result;
   }
 
@@ -852,6 +1005,8 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
       if (Game *game = SelectedGame(session)) {
         const std::string selected_id = game->id;
         game->favorite = !game->favorite;
+        session->osd_text = game->favorite ? "已加入收藏" : "已取消收藏";
+        session->osd_frames_remaining = 100;
         session->navigation = BuildNavigation(session->library, session->include_empty_platforms);
         session->active_nav_index = ClampIndex(session->active_nav_index, 0,
             static_cast<int>(session->navigation.size()) - 1);
@@ -915,7 +1070,7 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
       if (max_index >= 0) {
         session->selected_visible_index =
             ClampIndex(session->selected_visible_index -
-                           GridPageSizeForPreferences(session->preferences, layout),
+                           GridPageSizeForSession(*session, layout),
                        0, max_index);
       }
       break;
@@ -923,17 +1078,14 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
       if (max_index >= 0) {
         session->selected_visible_index =
             ClampIndex(session->selected_visible_index +
-                           GridPageSizeForPreferences(session->preferences, layout),
+                           GridPageSizeForSession(*session, layout),
                        0, max_index);
       }
-      break;
-    case UiAction::NextBgm:
-      session->preferences.bgm_mode = UiBgmMode::Music;
-      ++session->bgm_track_revision;
       break;
     case UiAction::AdjustVolumeDown:
     case UiAction::AdjustVolumeUp:
     case UiAction::Power:
+    case UiAction::Search:
       break;
     case UiAction::Confirm:
       if (const Game *game = SelectedGame(*session)) {
@@ -953,6 +1105,7 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
       result.intent = UiIntent::Back;
       break;
     case UiAction::Menu:
+      session->search_active = false;
       session->view = UiView::Settings;
       session->settings_selected_index = 0;
       session->settings_scroll_offset = 0;
@@ -973,6 +1126,27 @@ UiActionResult ApplyUiAction(UiSession *session, UiAction action, const UiLayout
     session->description_scroll_line = 0;
   }
   return result;
+}
+
+bool AppendSearchText(UiSession *session, const std::string &text) {
+  if (!session || !session->search_active || text.empty()) return false;
+  session->search_query += text;
+  session->scroll_offset = 0;
+  RebuildVisibleGames(session);
+  return true;
+}
+
+bool BackspaceSearchText(UiSession *session) {
+  if (!session || !session->search_active || session->search_query.empty()) return false;
+  std::size_t erase_from = session->search_query.size() - 1;
+  while (erase_from > 0 &&
+         (static_cast<unsigned char>(session->search_query[erase_from]) & 0xC0) == 0x80) {
+    --erase_from;
+  }
+  session->search_query.erase(erase_from);
+  session->scroll_offset = 0;
+  RebuildVisibleGames(session);
+  return true;
 }
 
 const Game *SelectedGame(const UiSession &session) {
@@ -1044,7 +1218,10 @@ std::string CoreDisplayName(const std::string &core) {
       {"mupen64plus_next_libretro.so", "Mupen64Plus-Next"},
       {"parallel_n64_libretro.so", "ParaLLEl N64"},
       {"fbneo_libretro.so", "FinalBurn Neo"},
+      {"fbalpha_libretro.so", "FB Alpha"},
       {"fbalpha2012_libretro.so", "FB Alpha 2012"},
+      {"fbalpha2012_neogeo_libretro.so", "FB Alpha 2012 Neo Geo"},
+      {"nebularm_legacy_libretro.so", "Nebula ARM Legacy"},
       {"mame2022xtreme_libretro.so", "MAME 2022 Xtreme"},
       {"mame2003_xtreme_libretro.so", "MAME 2003"},
       {"mame2003_plus_libretro.so", "MAME 2003-Plus"},

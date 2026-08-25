@@ -18,7 +18,7 @@ mkdir -p "$FS/mnt/vendor/deep/retro/cores" \
 
 printf 'retroarch-bin' >"$FS/mnt/vendor/deep/retro/retroarch"
 printf 'core' >"$FS/mnt/vendor/deep/retro/cores/mgba_libretro.so"
-printf '#!/bin/sh\n' >"$FS/mnt/mod/ctrl/RA_launch.sh"
+printf '#!/bin/bash\n' >"$FS/mnt/mod/ctrl/RA_launch.sh"
 printf -- '-GBA,mgba_libretro.so\n' >"$FS/mnt/mod/ctrl/configs/CORES.txt"
 printf 'global.ssh=0\n' >"$FS/mnt/mod/ctrl/configs/system.cfg"
 printf '#!/bin/sh\n' >"$FS/mnt/vendor/ctrl/loadapp.sh"

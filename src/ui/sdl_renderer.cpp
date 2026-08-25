@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "ui/grid_scroll_tracker.h"
 #include "ui/media_playback.h"
 
 namespace mpl {
@@ -55,6 +56,8 @@ constexpr int kPrewarmCoverRadius = 12;
 constexpr double kDefaultPegasusCoverAspect = 1.42;
 constexpr double kSelectedCoverScale = 1.15;
 constexpr Uint32 kTabTransitionDurationMs = 240;
+constexpr Uint32 kChromeTransitionDurationMs = 300;
+constexpr Uint32 kCoverScaleDurationMs = 150;
 
 constexpr SDL_Color kBackground{3, 4, 5, 255};
 constexpr SDL_Color kPanel{8, 9, 10, 255};
@@ -139,9 +142,6 @@ SDL_Texture *g_video_texture = nullptr;
 SDL_Renderer *g_video_renderer = nullptr;
 std::uint64_t g_video_texture_version = 0;
 std::string g_video_texture_path;
-int g_seen_bgm_track_revision = 0;
-std::vector<std::string> g_music_tracks;
-std::size_t g_music_track_index = 0;
 std::string g_cover_request_view_key;
 std::string g_pegasus_aspect_view_key;
 double g_pegasus_aspect = kDefaultPegasusCoverAspect;
@@ -152,6 +152,7 @@ enum class GridVerticalAnchor {
 };
 GridVerticalAnchor g_grid_vertical_anchor = GridVerticalAnchor::Top;
 std::string g_grid_vertical_anchor_view_key;
+GridScrollTracker g_grid_scroll_tracker;
 int g_render_canvas_width = kLogicalWidth;
 int g_render_canvas_height = kLogicalHeight;
 
@@ -164,6 +165,25 @@ struct TabTransitionState {
 };
 
 TabTransitionState g_tab_transition;
+
+struct ChromeTransitionState {
+  bool initialized = false;
+  bool fullscreen = false;
+  float from = 0.0f;
+  float to = 0.0f;
+  float current = 0.0f;
+  Uint32 started_at = 0;
+};
+
+struct CoverScaleAnimation {
+  float from = 1.0f;
+  float to = 1.0f;
+  Uint32 started_at = 0;
+};
+
+ChromeTransitionState g_chrome_transition;
+std::unordered_map<std::string, CoverScaleAnimation> g_cover_scale_animations;
+std::string g_selected_cover_game_id;
 
 void SetColor(SDL_Renderer *renderer, SDL_Color color) {
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
@@ -220,6 +240,20 @@ void FillHorizontalAlphaGradient(SDL_Renderer *renderer, const SDL_Rect &rect,
 void Stroke(SDL_Renderer *renderer, const SDL_Rect &rect, SDL_Color color) {
   SetColor(renderer, color);
   SDL_RenderDrawRect(renderer, &rect);
+}
+
+void DrawSearchGlyph(SDL_Renderer *renderer, int center_x, int center_y,
+                     SDL_Color color) {
+  constexpr int radius = 6;
+  SetColor(renderer, color);
+  for (int degrees = 0; degrees < 360; degrees += 12) {
+    const double radians = degrees * 3.14159265358979323846 / 180.0;
+    SDL_RenderDrawPoint(renderer,
+                        center_x + static_cast<int>(std::lround(std::cos(radians) * radius)),
+                        center_y + static_cast<int>(std::lround(std::sin(radians) * radius)));
+  }
+  SDL_RenderDrawLine(renderer, center_x + 4, center_y + 4,
+                     center_x + 10, center_y + 10);
 }
 
 SDL_Color WithOpacity(SDL_Color color, float opacity) {
@@ -593,6 +627,27 @@ bool DrawMediaImage(SDL_Renderer *renderer, const std::string &path, const SDL_R
   return true;
 }
 
+bool DrawMediaImageCrop(SDL_Renderer *renderer, const std::string &path,
+                        const SDL_Rect &bounds) {
+  CachedTexture *cover = LoadCoverTexture(renderer, path);
+  if (!cover || !cover->texture || cover->width <= 0 || cover->height <= 0 ||
+      bounds.w <= 0 || bounds.h <= 0) {
+    return false;
+  }
+  SDL_Rect source{0, 0, cover->width, cover->height};
+  const double source_aspect = cover->width / static_cast<double>(cover->height);
+  const double target_aspect = bounds.w / static_cast<double>(bounds.h);
+  if (source_aspect > target_aspect) {
+    source.w = std::max(1, static_cast<int>(std::lround(cover->height * target_aspect)));
+    source.x = (cover->width - source.w) / 2;
+  } else if (source_aspect < target_aspect) {
+    source.h = std::max(1, static_cast<int>(std::lround(cover->width / target_aspect)));
+    source.y = (cover->height - source.h) / 2;
+  }
+  SDL_RenderCopy(renderer, cover->texture, &source, &bounds);
+  return true;
+}
+
 bool DrawCoverImage(SDL_Renderer *renderer, const Game &game, const SDL_Rect &bounds) {
   return DrawMediaImage(renderer, game.media.cover, bounds);
 }
@@ -680,53 +735,6 @@ int DigitCount(int value) {
   return digits;
 }
 
-std::string LowerAscii(std::string value) {
-  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  return value;
-}
-
-bool IsMusicFile(const fs::path &path) {
-  const std::string extension = LowerAscii(path.extension().u8string());
-  return extension == ".mp3" || extension == ".ogg" || extension == ".wav" ||
-         extension == ".flac" || extension == ".m4a" || extension == ".aac";
-}
-
-std::vector<std::string> CollectMusicTracks() {
-  std::vector<fs::path> directories;
-  if (!g_app_dir.empty()) {
-    directories.push_back(fs::u8path(g_app_dir) / "assets/music");
-    directories.push_back(fs::u8path(g_app_dir) / "assets/music/builtin");
-    directories.push_back(fs::u8path(g_app_dir) / "../assets/music/builtin");
-  }
-  if (!g_state_dir.empty()) directories.push_back(fs::u8path(g_state_dir) / "music");
-
-  std::vector<std::string> tracks;
-  for (const fs::path &directory : directories) {
-    std::error_code error;
-    for (fs::directory_iterator iterator(directory, error), end;
-         !error && iterator != end; iterator.increment(error)) {
-      if (!iterator->is_regular_file(error) || !IsMusicFile(iterator->path())) continue;
-      tracks.push_back(iterator->path().u8string());
-    }
-  }
-  std::sort(tracks.begin(), tracks.end());
-  tracks.erase(std::unique(tracks.begin(), tracks.end()), tracks.end());
-  return tracks;
-}
-
-std::string SelectedMusicTrack(const UiSession &session) {
-  if (g_music_tracks.empty()) g_music_tracks = CollectMusicTracks();
-  if (g_music_tracks.empty()) return {};
-  if (session.bgm_track_revision != g_seen_bgm_track_revision) {
-    g_seen_bgm_track_revision = session.bgm_track_revision;
-    g_music_track_index = (g_music_track_index + 1) % g_music_tracks.size();
-  }
-  g_music_track_index %= g_music_tracks.size();
-  return g_music_tracks[g_music_track_index];
-}
-
 bool PreviewGameAudioEnabled() {
   const char *value = std::getenv("MPL_DISABLE_PREVIEW_GAME_AUDIO");
   if (!value || value[0] == '\0') return true;
@@ -767,10 +775,6 @@ void SyncAudioPreview(const UiSession &session, const Game *game) {
   std::string desired_path;
   bool loop = false;
   switch (session.preferences.bgm_mode) {
-    case UiBgmMode::Music:
-      desired_path = SelectedMusicTrack(session);
-      loop = true;
-      break;
     case UiBgmMode::GameAudio:
       if (PreviewGameAudioEnabled() && game && session.preferences.preview_video_enabled &&
           g_active_video_path == game->media.video) {
@@ -1083,18 +1087,61 @@ float SmoothStep(float value) {
   return clamped * clamped * (3.0f - 2.0f * clamped);
 }
 
+float OutCubic(float value) {
+  const float clamped = std::max(0.0f, std::min(1.0f, value));
+  const float remaining = 1.0f - clamped;
+  return 1.0f - remaining * remaining * remaining;
+}
+
+float InOutQuad(float value) {
+  const float clamped = std::max(0.0f, std::min(1.0f, value));
+  return clamped < 0.5f ? 2.0f * clamped * clamped
+                        : 1.0f - std::pow(-2.0f * clamped + 2.0f, 2.0f) / 2.0f;
+}
+
+float TransitionProgress(Uint32 started_at, Uint32 duration, Uint32 now) {
+  if (duration == 0) return 1.0f;
+  return std::min(1.0f, (now - started_at) / static_cast<float>(duration));
+}
+
+void UpdateChromeTransition(const UiSession &session, Uint32 now) {
+  const bool fullscreen = session.preferences.fullscreen_grid;
+  if (!g_chrome_transition.initialized) {
+    const float target = fullscreen ? 1.0f : 0.0f;
+    g_chrome_transition = ChromeTransitionState{true, fullscreen, target, target,
+                                                 target, now};
+    return;
+  }
+  if (fullscreen != g_chrome_transition.fullscreen) {
+    g_chrome_transition.fullscreen = fullscreen;
+    g_chrome_transition.from = g_chrome_transition.current;
+    g_chrome_transition.to = fullscreen ? 1.0f : 0.0f;
+    g_chrome_transition.started_at = now;
+  }
+  const float progress = TransitionProgress(g_chrome_transition.started_at,
+                                            kChromeTransitionDurationMs, now);
+  g_chrome_transition.current = g_chrome_transition.from +
+      (g_chrome_transition.to - g_chrome_transition.from) * OutCubic(progress);
+  if (progress >= 1.0f) g_chrome_transition.current = g_chrome_transition.to;
+}
+
 float ChromeHiddenProgress(const UiSession &session) {
-  return session.preferences.fullscreen_grid ? 1.0f : 0.0f;
+  (void)session;
+  return g_chrome_transition.current;
 }
 
 SDL_Rect GridBounds(const UiSession &session) {
   const float progress = ChromeHiddenProgress(session);
   const int x = static_cast<int>(std::lround(kGridX + (kFullscreenGridX - kGridX) * progress));
+  const int y = static_cast<int>(std::lround(kGridY * (1.0f - progress)));
   const int compact_grid_width = std::max(1, CanvasWidth() - kGridX);
   const int fullscreen_grid_width = CanvasWidth();
   const int width = static_cast<int>(std::lround(
       compact_grid_width + (fullscreen_grid_width - compact_grid_width) * progress));
-  return SDL_Rect{x, kGridY, width, std::max(1, CanvasHeight() - kGridY)};
+  const int compact_grid_height = std::max(1, CanvasHeight() - kGridY);
+  const int height = static_cast<int>(std::lround(
+      compact_grid_height + (CanvasHeight() - compact_grid_height) * progress));
+  return SDL_Rect{x, y, width, std::max(1, height)};
 }
 
 int GridInset(const UiSession &session) {
@@ -1208,10 +1255,10 @@ void EndLogicalCanvas(SDL_Renderer *renderer, const SDL_Rect &previous_viewport,
   SDL_RenderSetViewport(renderer, &previous_viewport);
 }
 
-void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
+void RenderTopBar(SDL_Renderer *renderer, const UiSession &session, int y_offset) {
   const ThemeColors &theme = ThemeForSession(session);
   const int canvas_width = CanvasWidth();
-  Fill(renderer, SDL_Rect{0, 0, canvas_width, 45}, theme.bar);
+  Fill(renderer, SDL_Rect{0, y_offset, canvas_width, 45}, theme.bar);
 
   struct TabVisual {
     int index = 0;
@@ -1224,7 +1271,7 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
   const int active_index = nav_count > 0
                                ? std::clamp(session.active_nav_index, 0, nav_count - 1)
                                : 0;
-  const SDL_Rect tabs_clip{0, 0, std::max(1, canvas_width - 140), 45};
+  const SDL_Rect tabs_clip{0, y_offset, std::max(1, canvas_width - 140), 45};
   const Uint32 now = SDL_GetTicks();
   if (nav_count <= 0) {
     g_tab_transition = TabTransitionState{};
@@ -1313,7 +1360,7 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     const UiNavItem &item = TabItemAt(session, visual.index);
     const int width = TabWidth(item);
     if (visual.selected) {
-      FillRightSlantTab(renderer, static_cast<int>(std::lround(visual.x)), 1,
+      FillRightSlantTab(renderer, static_cast<int>(std::lround(visual.x)), y_offset + 1,
                         width, 42, 8, WithOpacity(theme.selected, visual.opacity));
     }
   }
@@ -1322,14 +1369,15 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     const UiNavItem &item = TabItemAt(session, visual.index);
     const int tab_x = static_cast<int>(std::lround(visual.x));
     const int width = TabWidth(item);
-    DrawText(renderer, item.title, tab_x + width / 2, 13,
+    DrawText(renderer, item.title, tab_x + width / 2, y_offset + 13,
              kTabTextFontSize,
              WithOpacity(visual.selected ? kInk : SDL_Color{160, 164, 170, 255},
                          visual.opacity),
              0, true);
     const SDL_Color divider = WithOpacity(SDL_Color{128, 132, 138, 255}, visual.opacity);
     SetColor(renderer, divider);
-    SDL_RenderDrawLine(renderer, tab_x + width - 8, 42, tab_x + width + 8, 2);
+    SDL_RenderDrawLine(renderer, tab_x + width - 8, y_offset + 42,
+                       tab_x + width + 8, y_offset + 2);
   }
   constexpr int kTabRightFadeWidth = 36;
   const int fade_width = std::min(kTabRightFadeWidth, tabs_clip.w);
@@ -1341,8 +1389,24 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
   SDL_SetRenderDrawBlendMode(renderer, previous_blend);
   SDL_RenderSetClipRect(renderer, nullptr);
 
+  if (session.search_active || !session.search_query.empty()) {
+    const SDL_Rect search_box{10, y_offset + 6, std::max(120, tabs_clip.w - 20), 32};
+    Fill(renderer, search_box,
+         session.search_active ? theme.selected : SDL_Color{24, 27, 30, 255});
+    Stroke(renderer, search_box,
+           session.search_active ? theme.accent : SDL_Color{112, 116, 122, 255});
+    DrawSearchGlyph(renderer, search_box.x + 17, search_box.y + 15,
+                    session.search_active ? kInk : kMuted);
+    std::string search_text = session.search_query;
+    if (search_text.empty()) search_text = "输入搜索词";
+    if (session.search_active) search_text += "_";
+    DrawText(renderer, search_text, search_box.x + 34, search_box.y + 7, 15,
+             session.search_query.empty() ? kMuted : kInk,
+             search_box.w - 44);
+  }
+
   SetColor(renderer, SDL_Color{215, 217, 220, 255});
-  SDL_RenderDrawLine(renderer, 0, 44, canvas_width - 1, 44);
+  SDL_RenderDrawLine(renderer, 0, y_offset + 44, canvas_width - 1, y_offset + 44);
 
   constexpr SDL_Color kStatusWhite{255, 255, 255, 255};
   if (!session.navigation.empty()) {
@@ -1359,9 +1423,9 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
     const std::string nav_index_text =
         "合集:" + PaddedNumber(nav_index + 1, 2) + "/" +
         PaddedNumber(static_cast<int>(session.navigation.size()), 2);
-    DrawTextRight(renderer, game_index_text, canvas_width - 80, 25, 13,
+    DrawTextRight(renderer, game_index_text, canvas_width - 80, y_offset + 25, 13,
                   SDL_Color{235, 237, 240, 220});
-    DrawTextRight(renderer, nav_index_text, canvas_width - 5, 25, 13,
+    DrawTextRight(renderer, nav_index_text, canvas_width - 5, y_offset + 25, 13,
                   SDL_Color{235, 237, 240, 205});
   }
 
@@ -1370,34 +1434,62 @@ void RenderTopBar(SDL_Renderer *renderer, const UiSession &session) {
       battery_percent >= 0 ? std::to_string(std::clamp(battery_percent, 0, 100)) + "%"
                            : "--%";
   constexpr int kBatteryOffsetY = 3;
-  DrawTextRight(renderer, ClockText(), canvas_width - 75, kBatteryOffsetY, 12,
+  DrawTextRight(renderer, ClockText(), canvas_width - 75, y_offset + kBatteryOffsetY, 12,
                 kStatusWhite);
-  DrawTextRight(renderer, battery_text, canvas_width - 31, 0 + kBatteryOffsetY, 12,
+  DrawTextRight(renderer, battery_text, canvas_width - 31,
+                y_offset + kBatteryOffsetY, 12,
                 kStatusWhite);
-  const SDL_Rect battery_body{canvas_width - 27, 2 + kBatteryOffsetY, 18, 10};
+  const SDL_Rect battery_body{canvas_width - 27,
+                              y_offset + 2 + kBatteryOffsetY, 18, 10};
   Stroke(renderer, battery_body, kStatusWhite);
-  Fill(renderer, SDL_Rect{canvas_width - 8, 5 + kBatteryOffsetY, 2, 4},
+  Fill(renderer, SDL_Rect{canvas_width - 8,
+                          y_offset + 5 + kBatteryOffsetY, 2, 4},
        kStatusWhite);
-  const int fill_width = battery_percent >= 0
-                             ? (battery_body.w - 4) * std::clamp(battery_percent, 0, 100) / 100
-                             : 10;
-  const SDL_Color battery_color = session.system_status.charging
-                                      ? SDL_Color{92, 198, 255, 255}
-                                      : SDL_Color{76, 219, 111, 255};
-  Fill(renderer, SDL_Rect{battery_body.x + 2, battery_body.y + 2,
-                          fill_width, battery_body.h - 4},
-       battery_color);
+  if (battery_percent >= 0) {
+    const int percent = std::clamp(battery_percent, 0, 100);
+    const int fill_width = (battery_body.w - 4) * percent / 100;
+    SDL_Color battery_color = kStatusWhite;
+    if (percent >= 50) battery_color = SDL_Color{76, 219, 111, 255};
+    else if (percent <= 10) battery_color = SDL_Color{235, 71, 71, 255};
+    else if (percent <= 20) battery_color = SDL_Color{244, 201, 72, 255};
+    if (fill_width > 0) {
+      Fill(renderer, SDL_Rect{battery_body.x + 2, battery_body.y + 2,
+                              fill_width, battery_body.h - 4},
+           battery_color);
+    }
+  }
+  if (battery_percent >= 0 && session.system_status.charging) {
+    constexpr SDL_Color kChargingBolt{255, 255, 255, 255};
+    const int x = battery_body.x;
+    const int y = battery_body.y;
+    const SDL_Point bolt[] = {
+        {x + 10, y + 2},
+        {x + 9, y + 3}, {x + 10, y + 3},
+        {x + 7, y + 4}, {x + 8, y + 4}, {x + 9, y + 4},
+        {x + 10, y + 4}, {x + 11, y + 4},
+        {x + 10, y + 5}, {x + 11, y + 5},
+        {x + 9, y + 6}, {x + 10, y + 6},
+        {x + 8, y + 7}, {x + 9, y + 7},
+    };
+    SetColor(renderer, kChargingBolt);
+    SDL_RenderDrawPoints(renderer, bolt,
+                         static_cast<int>(sizeof(bolt) / sizeof(bolt[0])));
+  }
 }
 
-void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
+void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session, int x_offset) {
   const Game *game = SelectedGameForRender(session);
   const int canvas_height = CanvasHeight();
-  Fill(renderer, SDL_Rect{0, 45, 240, std::max(1, canvas_height - 45)}, kBackground);
+  Fill(renderer, SDL_Rect{x_offset, 45, 240, std::max(1, canvas_height - 45)},
+       kBackground);
   SetColor(renderer, SDL_Color{50, 52, 55, 255});
-  SDL_RenderDrawLine(renderer, 239, 45, 239, canvas_height - 1);
+  SDL_RenderDrawLine(renderer, x_offset + 239, 45, x_offset + 239,
+                     canvas_height - 1);
 
   if (!game) {
-    DrawText(renderer, "此分类暂无游戏", 120, (canvas_height + 45) / 2 - 25,
+    DrawText(renderer, session.search_query.empty() ? "此分类暂无游戏" : "没有匹配内容",
+             x_offset + 120,
+             (canvas_height + 45) / 2 - 25,
              18, kMuted, 208, true);
     return;
   }
@@ -1407,7 +1499,7 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
   constexpr int kTitleLineHeight = 21;
   const int title_y = has_logo ? 120 : 51;
   if (has_logo) {
-    const SDL_Rect logo_bounds{18, 52, 204, 67};
+    const SDL_Rect logo_bounds{x_offset + 18, 52, 204, 67};
     DrawMediaImage(renderer, game->media.logo, logo_bounds);
   }
 
@@ -1415,7 +1507,7 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
   std::vector<std::string> title_lines = WrappedTextLines(title, 214, kTitleSize);
   if (title_lines.empty()) title_lines.push_back(title);
   for (std::size_t index = 0; index < title_lines.size(); ++index) {
-    DrawText(renderer, title_lines[index], 120,
+    DrawText(renderer, title_lines[index], x_offset + 120,
              title_y + static_cast<int>(index) * kTitleLineHeight,
              kTitleSize, kInk, 214, true);
   }
@@ -1423,19 +1515,17 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
   const int media_y = title_y +
       static_cast<int>(title_lines.size()) * kTitleLineHeight + kTitleGap;
 
-  const SDL_Rect video_bounds{13, media_y, 214, 120};
+  const SDL_Rect video_bounds{x_offset + 13, media_y, 214, 120};
   Fill(renderer, video_bounds, SDL_Color{0, 0, 0, 255});
   const SDL_Rect media_inner{video_bounds.x + 1, video_bounds.y + 1,
                              video_bounds.w - 2, video_bounds.h - 2};
   SDL_Texture *video_texture = VideoTexture(renderer);
-  const bool expects_video =
-      session.preferences.preview_video_enabled && !game->media.video.empty();
   if (video_texture) {
     SDL_RenderCopy(renderer, video_texture, nullptr, &media_inner);
-  } else if (!expects_video) {
+  } else {
     const SDL_Color fallback = SDL_Color{24, 27, 31, 255};
     Fill(renderer, media_inner, fallback);
-    if (!DrawCoverImage(renderer, *game, media_inner)) {
+    if (!DrawMediaImageCrop(renderer, game->media.cover, media_inner)) {
       DrawText(renderer, PlatformLabel(*game), video_bounds.x + video_bounds.w / 2,
                video_bounds.y + video_bounds.h / 2 - 14, 22, kMuted,
                video_bounds.w - 16, true);
@@ -1449,7 +1539,8 @@ void RenderGameInfo(SDL_Renderer *renderer, const UiSession &session) {
     const int description_y = media_y + video_bounds.h + 10;
     const int max_lines = std::max(1, (canvas_height - description_y - 8) /
                                            line_height);
-    DrawWrappedText(renderer, game->description, 13, description_y, 214,
+    DrawWrappedText(renderer, game->description, x_offset + 13,
+                    description_y, 214,
                     line_height, max_lines,
                     description_size, kInk, session.description_scroll_line);
   }
@@ -1515,6 +1606,39 @@ void DrawCoverTitle(SDL_Renderer *renderer, const std::string &title,
   }
 }
 
+float CoverScale(const std::string &game_id, float fallback, Uint32 now) {
+  const auto found = g_cover_scale_animations.find(game_id);
+  if (found == g_cover_scale_animations.end()) return fallback;
+  const float progress = TransitionProgress(found->second.started_at,
+                                            kCoverScaleDurationMs, now);
+  const float scale = found->second.from +
+      (found->second.to - found->second.from) * InOutQuad(progress);
+  if (progress >= 1.0f) g_cover_scale_animations.erase(found);
+  return scale;
+}
+
+void StartCoverScaleAnimation(const std::string &game_id, float fallback_from,
+                              float target, Uint32 now) {
+  if (game_id.empty()) return;
+  const float current = CoverScale(game_id, fallback_from, now);
+  g_cover_scale_animations[game_id] = CoverScaleAnimation{current, target, now};
+}
+
+void UpdateSelectedCoverAnimation(const UiSession &session, Uint32 now) {
+  const Game *selected = SelectedGameForRender(session);
+  const std::string selected_id = selected ? selected->id : std::string{};
+  if (g_selected_cover_game_id.empty()) {
+    g_selected_cover_game_id = selected_id;
+    return;
+  }
+  if (selected_id == g_selected_cover_game_id) return;
+  StartCoverScaleAnimation(g_selected_cover_game_id,
+                           static_cast<float>(kSelectedCoverScale), 1.0f, now);
+  StartCoverScaleAnimation(selected_id, 1.0f,
+                           static_cast<float>(kSelectedCoverScale), now);
+  g_selected_cover_game_id = selected_id;
+}
+
 void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
   const ThemeColors &theme = ThemeForSession(session);
   const SDL_Rect bounds = GridBounds(session);
@@ -1544,27 +1668,24 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
   const int visible_rows = pegasus_grid
                                ? std::max(1, (bounds.h - inset * 2) / step_y)
                                : GridVisibleRows(session);
-  int scroll_row = raw_scroll_row;
-  if (session.selected_visible_index >= 0) {
-    const int selected_row = session.selected_visible_index / columns;
-    if (selected_row < scroll_row) {
-      scroll_row = selected_row;
-    } else if (selected_row > scroll_row + visible_rows) {
-      scroll_row = std::max(0, selected_row - visible_rows);
-    }
-  }
+  std::ostringstream viewport_key;
+  viewport_key << session.active_nav_index << ':' << session.visible_game_indices.size()
+               << ':' << columns << ':' << bounds.w << 'x' << bounds.h << ':'
+               << (pegasus_grid ? 1 : 0);
+  const std::string grid_view_key = viewport_key.str();
+  const int selected_row = session.selected_visible_index >= 0
+                               ? session.selected_visible_index / columns
+                               : -1;
+  const int scroll_row = g_grid_scroll_tracker.Resolve(
+      grid_view_key, raw_scroll_row, selected_row, visible_rows);
   int base_y = top_aligned_y;
   if (session.selected_visible_index >= 0) {
     const int bottom_aligned_y = bounds.y + bounds.h - inset - card_height -
                                  visible_rows * step_y;
     const int selected_row_in_view = std::clamp(
         session.selected_visible_index / columns - scroll_row, 0, visible_rows);
-    std::ostringstream anchor_key;
-    anchor_key << session.active_nav_index << ':' << session.visible_game_indices.size()
-               << ':' << columns << ':' << bounds.w << 'x' << bounds.h << ':'
-               << (pegasus_grid ? 1 : 0);
-    if (anchor_key.str() != g_grid_vertical_anchor_view_key) {
-      g_grid_vertical_anchor_view_key = anchor_key.str();
+    if (grid_view_key != g_grid_vertical_anchor_view_key) {
+      g_grid_vertical_anchor_view_key = grid_view_key;
       g_grid_vertical_anchor = GridVerticalAnchor::Top;
     }
     if (selected_row_in_view <= 0) {
@@ -1581,7 +1702,8 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
   const SDL_Rect grid_clip = bounds;
 
   if (session.visible_game_indices.empty()) {
-    DrawText(renderer, "当前列表无游戏", bounds.x + bounds.w / 2,
+    DrawText(renderer, session.search_query.empty() ? "当前列表无游戏" : "没有匹配内容",
+             bounds.x + bounds.w / 2,
              bounds.y + bounds.h / 2 - 10, 20, kMuted,
              std::max(120, bounds.w - inset * 2), true);
     return;
@@ -1638,6 +1760,8 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
   };
 
   SDL_RenderSetClipRect(renderer, &grid_clip);
+  const Uint32 now = SDL_GetTicks();
+  UpdateSelectedCoverAnimation(session, now);
   struct ScaledCard {
     int visible_index = -1;
     SDL_Rect cover{};
@@ -1656,12 +1780,15 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
                                : SDL_Rect{cell.x + 3, cell.y + 3,
                                           cell.w - 6, cell.h - 6};
     const bool selected = visible_index == session.selected_visible_index;
-    if (!selected) draw_card(visible_index, cover, false);
-    if (selected) {
+    draw_card(visible_index, cover, false);
+    const Game &game = session.library.games[session.visible_game_indices[visible_index]];
+    const float fallback_scale = selected ? static_cast<float>(kSelectedCoverScale) : 1.0f;
+    const float scale = CoverScale(game.id, fallback_scale, now);
+    if (scale > 1.001f || selected) {
       const int expanded_width = static_cast<int>(
-          std::lround(cover.w * kSelectedCoverScale));
+          std::lround(cover.w * scale));
       const int expanded_height = static_cast<int>(
-          std::lround(cover.h * kSelectedCoverScale));
+          std::lround(cover.h * scale));
       const int center_x = cover.x + cover.w / 2;
       const int center_y = cover.y + cover.h / 2;
       scaled_cards.push_back({visible_index,
@@ -1670,9 +1797,13 @@ void RenderGrid(SDL_Renderer *renderer, const UiSession &session) {
                                            center_y - expanded_height / 2,
                                            expanded_width, expanded_height},
                                   grid_clip),
-                              true});
+                              selected});
     }
   }
+  std::stable_sort(scaled_cards.begin(), scaled_cards.end(),
+                   [](const ScaledCard &left, const ScaledCard &right) {
+                     return !left.highlighted && right.highlighted;
+                   });
   for (const ScaledCard &card : scaled_cards) {
     draw_card(card.visible_index, card.cover, card.highlighted);
   }
@@ -1809,7 +1940,7 @@ void RenderSettingsView(SDL_Renderer *renderer, const UiSession &session) {
       Fill(renderer, SDL_Rect{36, row.y, 4, row.h}, theme.accent);
     }
     DrawText(renderer, kLabels[index], 56, row.y + 19, 19, kInk, 390);
-    if (index == 7) {
+    if (index == 8) {
       Fill(renderer, SDL_Rect{482, row.y + 18, 28, 28}, theme.selected);
       Stroke(renderer, SDL_Rect{482, row.y + 18, 28, 28}, SDL_Color{160, 164, 170, 255});
     }
@@ -1842,7 +1973,7 @@ void RenderAboutView(SDL_Renderer *renderer, const UiSession &session) {
   int y = 48;
   DrawText(renderer, "RGFrontend", kTextX, y, 30, kInk, canvas_width - 112);
   y += 42;
-  DrawText(renderer, "Version 1.0.1", kTextX, y, 18, kMuted,
+  DrawText(renderer, "Version 1.0.2", kTextX, y, 18, kMuted,
            canvas_width - 112);
   y += 34;
   DrawText(renderer, "Developed by zhangjiyz", kTextX, y, 18, kMuted,
@@ -1895,10 +2026,10 @@ void RenderHotkeysView(SDL_Renderer *renderer, const UiSession &session) {
       {"A", "确认 / 启动"},
       {"B", "返回 / 取消"},
       {"L1 / R1", "切换平台"},
-      {"L2 / R2", "滚动介绍"},
-      {"X", "显示/隐藏标题"},
+      {"L2 / R2", "快速翻页"},
+      {"X", "收藏/取消"},
       {"Y", "选择游戏核心"},
-      {"Select", "收藏/取消"},
+      {"Select", "搜索游戏"},
       {"Start/Menu", "打开设置"},
       {"音量 -/+", "调整音量"},
       {"Power", "休眠"},
@@ -2007,6 +2138,90 @@ void RenderTargetSelectOverlay(SDL_Renderer *renderer, const UiSession &session)
   }
 }
 
+void RenderSearchKeyboardOverlay(SDL_Renderer *renderer, const UiSession &session) {
+  if (!session.search_active) return;
+  const ThemeColors &theme = ThemeForSession(session);
+  const int canvas_width = CanvasWidth();
+  const int canvas_height = CanvasHeight();
+  const int dialog_width = std::min(560, std::max(420, canvas_width - 32));
+  const int padding = 12;
+  const int gap = 4;
+  const int input_height = canvas_height >= 700 ? 44 : 38;
+  const int key_height = canvas_height >= 700 ? 42 : 32;
+  const int ok_height = canvas_height >= 700 ? 38 : 32;
+  const int footer_height = canvas_height >= 700 ? 30 : 26;
+  const int grid_height = key_height * 4 + gap * 3;
+  const int dialog_height = padding + input_height + 8 + grid_height + 8 +
+                            ok_height + footer_height + padding;
+  const SDL_Rect dialog{(canvas_width - dialog_width) / 2,
+                        (canvas_height - dialog_height) / 2,
+                        dialog_width, dialog_height};
+
+  Fill(renderer, SDL_Rect{0, 0, canvas_width, canvas_height},
+       SDL_Color{0, 0, 0, 150});
+  Fill(renderer, dialog, SDL_Color{17, 18, 20, 252});
+  Stroke(renderer, dialog, SDL_Color{112, 116, 122, 255});
+
+  const SDL_Rect input{dialog.x + padding, dialog.y + padding,
+                       dialog.w - padding * 2, input_height};
+  Fill(renderer, input, SDL_Color{7, 8, 9, 255});
+  Stroke(renderer, input, theme.accent);
+  DrawSearchGlyph(renderer, input.x + 19, input.y + input.h / 2 - 1, kMuted);
+  const std::string input_text = session.search_query.empty()
+                                     ? "输入搜索词_"
+                                     : session.search_query + "_";
+  DrawText(renderer, input_text, input.x + 38,
+           input.y + (input.h - 18) / 2 - 1, 17,
+           session.search_query.empty() ? kMuted : kInk,
+           std::max(80, input.w - 158));
+  DrawTextRight(renderer,
+                std::to_string(session.visible_game_indices.size()) + " 个结果",
+                input.x + input.w - 12, input.y + (input.h - 15) / 2,
+                14, kMuted);
+
+  const int keyboard_x = dialog.x + padding;
+  const int keyboard_y = input.y + input.h + 8;
+  const int keyboard_width = dialog.w - padding * 2;
+  const int key_width = (keyboard_width - gap * (kSearchKeyboardColumns - 1)) /
+                        kSearchKeyboardColumns;
+  for (int index = 0; index < kSearchKeyboardGridKeyCount; ++index) {
+    const int row = index / kSearchKeyboardColumns;
+    const int column = index % kSearchKeyboardColumns;
+    const SDL_Rect key{keyboard_x + column * (key_width + gap),
+                       keyboard_y + row * (key_height + gap),
+                       key_width, key_height};
+    const bool selected = index == session.search_keyboard_index;
+    Fill(renderer, key, selected ? theme.selected : SDL_Color{39, 42, 46, 255});
+    Stroke(renderer, key, selected ? theme.accent : SDL_Color{83, 87, 92, 255});
+    if (selected && key.w > 4 && key.h > 4) {
+      Stroke(renderer, SDL_Rect{key.x + 1, key.y + 1, key.w - 2, key.h - 2},
+             theme.accent);
+    }
+    const std::string label = SearchKeyboardKeyLabel(index);
+    const int font_size = label.size() > 2 ? 13 : 18;
+    DrawText(renderer, label, key.x + key.w / 2,
+             key.y + (key.h - font_size) / 2 - 1, font_size,
+             selected ? kInk : kMuted, key.w - 4, true);
+  }
+
+  const SDL_Rect ok{keyboard_x, keyboard_y + grid_height + 8,
+                    keyboard_width, ok_height};
+  const bool ok_selected = session.search_keyboard_index == kSearchKeyboardOkIndex;
+  Fill(renderer, ok, ok_selected ? theme.selected : SDL_Color{39, 42, 46, 255});
+  Stroke(renderer, ok, ok_selected ? theme.accent : SDL_Color{83, 87, 92, 255});
+  if (ok_selected) {
+    Stroke(renderer, SDL_Rect{ok.x + 1, ok.y + 1, ok.w - 2, ok.h - 2},
+           theme.accent);
+  }
+  DrawText(renderer, SearchKeyboardKeyLabel(kSearchKeyboardOkIndex),
+           ok.x + ok.w / 2, ok.y + (ok.h - 18) / 2 - 1, 18,
+           ok_selected ? kInk : kMuted, ok.w - 12, true);
+
+  DrawText(renderer, "A输入  X删除  Y完成  B取消",
+           dialog.x + dialog.w / 2, ok.y + ok.h + 7, 14,
+           kMuted, dialog.w - padding * 2, true);
+}
+
 void RenderCoreSelectOverlay(SDL_Renderer *renderer, const UiSession &session) {
   const Game *game = SelectedGameForRender(session);
   const std::vector<UiCoreOption> options = CoreOptionsForGame(session);
@@ -2098,9 +2313,6 @@ void SetRendererFontPath(std::string path) {
 void SetRendererMediaRoots(std::string app_dir, std::string state_dir) {
   g_app_dir = std::move(app_dir);
   g_state_dir = std::move(state_dir);
-  g_music_tracks.clear();
-  g_music_track_index = 0;
-  g_seen_bgm_track_revision = 0;
 }
 
 void SetRendererAudioDeviceOpenedCallback(std::function<void()> callback) {
@@ -2125,6 +2337,10 @@ void ClearRendererMediaCache() {
   g_pegasus_aspect_locked = false;
   g_grid_vertical_anchor = GridVerticalAnchor::Top;
   g_grid_vertical_anchor_view_key.clear();
+  g_grid_scroll_tracker.Reset();
+  g_chrome_transition = ChromeTransitionState{};
+  g_cover_scale_animations.clear();
+  g_selected_cover_game_id.clear();
 }
 
 bool RenderLibraryView(SDL_Renderer *renderer, const UiSession &session,
@@ -2162,8 +2378,15 @@ bool RenderLibraryView(SDL_Renderer *renderer, const UiSession &session,
     const Game *game = SelectedGameForRender(session);
     SyncVideoPreview(session, game);
     SyncAudioPreview(session, game);
-    RenderTopBar(renderer, session);
-    if (!session.preferences.fullscreen_grid) RenderGameInfo(renderer, session);
+    const Uint32 now = SDL_GetTicks();
+    UpdateChromeTransition(session, now);
+    const float chrome_hidden = session.search_active || !session.search_query.empty()
+                                    ? 0.0f
+                                    : ChromeHiddenProgress(session);
+    RenderTopBar(renderer, session,
+                 -static_cast<int>(std::lround(kGridY * chrome_hidden)));
+    RenderGameInfo(renderer, session,
+                   -static_cast<int>(std::lround(kGridX * chrome_hidden)));
     RenderGrid(renderer, session);
     if (session.view == UiView::TargetSelect) {
       RenderTargetSelectOverlay(renderer, session);
@@ -2171,6 +2394,7 @@ bool RenderLibraryView(SDL_Renderer *renderer, const UiSession &session,
     if (session.view == UiView::CoreSelect) {
       RenderCoreSelectOverlay(renderer, session);
     }
+    RenderSearchKeyboardOverlay(renderer, session);
   }
   RenderNoticeOverlay(renderer, session);
   RenderOsd(renderer, session);

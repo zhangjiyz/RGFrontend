@@ -71,53 +71,59 @@ H700 原厂发布包使用 720x480。640x480 和 720x720 布局已经包含，�
 - `音量 - / +`：调整系统音量。
 - `Power`：休眠。
 
-## H700平台测试状态
+## H700原厂平台映射与 RGFrontend测试状态
 
-| 平台 | 是否测试 |
+下表共54个平台，均直接对应已检查的 H700原厂固件 `dmenu.bin`中的平台定义。
+
+“原厂 dmenu有映射”表示菜单中存在平台名称、图标、扩展名或启动器等识别逻辑，
+不代表所有 H700固件版本都带有每一个可选程序或核心，也不代表该平台的所有游戏
+都已经验证。“是”表示 RGFrontend至少实际走通过该平台的一条启动路径；“待填”
+表示仍待完整验证。
+
+| 平台 | RGFrontend状态 |
 | --- | --- |
-| A2600 | 待填 |
-| A5200 | 待填 |
-| A7800 | 待填 |
+| A2600 | 是 |
+| A5200 | 是 |
+| A7800 | 是 |
 | A800 | 待填 |
 | AMIGA | 待填 |
 | ATARIST | 待填 |
-| ATOMISWAVE | 待填 |
+| ATOMISWAVE | 是 |
 | C64 | 待填 |
-| CPS1 | 待填 |
-| CPS2 | 待填 |
-| CPS3 | 待填 |
+| CPS1 | 是 |
+| CPS2 | 是 |
+| CPS3 | 是 |
 | DOS | 是 |
 | DREAMCAST | 是 |
-| EASYRPG | 待填 |
+| EASYRPG | 是 |
 | FBNEO | 是 |
 | FC | 是 |
-| FC-HD | 是 |
-| FDS | 待填 |
+| FDS | 是 |
 | GB | 是 |
 | GBC | 是 |
 | GBA | 是 |
 | GG | 是 |
-| GW | 待填 |
-| HBMAME | 待填 |
+| GW | 是 |
+| HBMAME | 是 |
 | JAVA | 是 |
-| LYNX | 待填 |
+| LYNX | 是 |
 | MAME | 是 |
 | MD | 是 |
 | MDCD | 是 |
-| MSX | 待填 |
+| MSX | 是 |
 | N64 | 是 |
 | NAOMI | 是 |
 | NDS | 是 |
 | NEOCD | 是 |
 | NEOGEO | 是 |
 | NGP | 是 |
-| ONS | 待填 |
+| ONS | 是 |
 | OPENBOR | 是 |
 | PCE | 是 |
 | PCECD | 是 |
 | PGM2 | 待填 |
 | PICO | 是 |
-| POKE | 待填 |
+| POKE | 是 |
 | PORTS | 是 |
 | PS | 是 |
 | PSP | 是 |
@@ -126,8 +132,8 @@ H700 原厂发布包使用 720x480。640x480 和 720x720 布局已经包含，�
 | SEGA32X | 是 |
 | SFC | 是 |
 | SMS | 是 |
-| VARCADE | 待填 |
-| VB | 待填 |
+| VARCADE | 是 |
+| VB | 是 |
 | VIC20 | 待填 |
 | WS | 是 |
 

@@ -38,6 +38,7 @@ sed \
   -e 's~^EMU=.*cut -d .* -f 5.*~EMU="${MPL_FORCE_EMU:-$(echo "$ROMFILE" | cut -d / -f 5)}"  # patched by RGFrontend~' \
   -e 's~^EMU_DIR="${ROMPATH##\*/}".*~EMU_DIR="${MPL_FORCE_EMU_DIR:-${ROMPATH##*/}}"  # patched by RGFrontend~' \
   -e 's~RACONFIG="$RA_DIR/retroarch_${EMU}.cfg"~RACONFIG="$RA_DIR/retroarch_${MPL_FORCE_RA_CONFIG_EMU:-$EMU}.cfg"  # patched by RGFrontend~' \
+  -e 's~-c ${RACONFIG}~-c \"${RACONFIG}\"~g' \
   -e 's~^    case \$VARC in~    if [ -n "${MPL_FORCE_VARC:-}" ]; then VARC="$MPL_FORCE_VARC"; fi  # patched by RGFrontend\
     case $VARC in~' \
   -e '/^other_readey$/a\
@@ -53,6 +54,8 @@ grep -q 'MPL_FORCE_EMU_DIR' "$temporary" ||
   fail "failed to patch EMU_DIR assignment in $SOURCE"
 grep -q 'MPL_FORCE_RA_CONFIG_EMU' "$temporary" ||
   fail "failed to patch RACONFIG assignment in $SOURCE"
+grep -Fq -- '-c "${RACONFIG}"' "$temporary" ||
+  fail "failed to quote RACONFIG in launcher commands from $SOURCE"
 grep -q 'MPL_FORCE_VARC' "$temporary" ||
   fail "failed to patch VARC override in $SOURCE"
 grep -q 'MPL_FORCE_VIDEO_ROTATION' "$temporary" ||

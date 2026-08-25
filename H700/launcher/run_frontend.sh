@@ -20,6 +20,7 @@ POWEROFF_CMD="${MPL_H700_POWEROFF_CMD:-poweroff}"
 POWER_SCRIPT="${MPL_H700_POWER_SCRIPT:-/mnt/vendor/ctrl/pwr_new.sh}"
 OS_SLEEP_NODE="${MPL_H700_OS_SLEEP_NODE:-/sys/class/power_supply/axp2202-battery/os_sleep}"
 FB_SYSFS_DIR="${MPL_FB_SYSFS_DIR:-/sys/class/graphics/fb0}"
+LCD_REFERENCE_IMAGE="${MPL_LCD_REFERENCE_IMAGE:-/mnt/vendor/res1/wallpapers/lcd/0.jpg}"
 
 mkdir -p "$STATE_DIR/library" "$STATE_DIR/state" "$LOG_DIR"
 
@@ -59,16 +60,24 @@ use_screen_size() {
   return 1
 }
 
+use_supported_lcd_size() {
+  case "$1x$2" in
+    640x480|720x480|720x720) use_screen_size "$1" "$2" ;;
+    *) return 1 ;;
+  esac
+}
+
 detect_screen_size() {
   if use_screen_size "$SCREEN_WIDTH" "$SCREEN_HEIGHT"; then
     return
   fi
 
-  if [ -r "$FB_SYSFS_DIR/modes" ]; then
-    mode="$(sed -n '1{s/[^0-9]*\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p;q;}' "$FB_SYSFS_DIR/modes" 2>/dev/null || true)"
-    if [ -n "$mode" ]; then
-      set -- $mode
-      if use_screen_size "$1" "$2"; then
+  if [ -r "$LCD_REFERENCE_IMAGE" ] && command -v file >/dev/null 2>&1; then
+    lcd_size="$(file -b "$LCD_REFERENCE_IMAGE" 2>/dev/null |
+      sed -n 's/.*[^0-9]\([0-9][0-9]*\)[[:space:]]*x[[:space:]]*\([0-9][0-9]*\)[^0-9].*/\1 \2/p' || true)"
+    if [ -n "$lcd_size" ]; then
+      set -- $lcd_size
+      if use_supported_lcd_size "$1" "$2"; then
         return
       fi
     fi
@@ -88,6 +97,16 @@ detect_screen_size() {
         if use_screen_size "$width" "$height"; then
           return
         fi
+      fi
+    fi
+  fi
+
+  if [ -r "$FB_SYSFS_DIR/modes" ]; then
+    mode="$(sed -n '1{s/[^0-9]*\([0-9][0-9]*\)x\([0-9][0-9]*\).*/\1 \2/p;q;}' "$FB_SYSFS_DIR/modes" 2>/dev/null || true)"
+    if [ -n "$mode" ]; then
+      set -- $mode
+      if use_screen_size "$1" "$2"; then
+        return
       fi
     fi
   fi

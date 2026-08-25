@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 BASE_IMAGE="${MPL_H700_BASE_IMAGE:-ubuntu:22.04}"
-BUILDER_IMAGE="${MPL_H700_BUILDER_IMAGE:-mpl-h700-builder:ubuntu22}"
+BUILDER_IMAGE="${MPL_H700_BUILDER_IMAGE:-mpl-h700-builder:ubuntu22-v2}"
 RUNTIME="${MPL_CONTAINER_RUNTIME:-}"
 SYSROOT="${MPL_H700_SYSROOT:-$REPO_ROOT/H700/sysroot}"
 DOCKERFILE="$SCRIPT_DIR/Dockerfile.ubuntu22"
@@ -53,9 +53,10 @@ printf 'building H700 package in %s with %s\n' "$BUILDER_IMAGE" "$RUNTIME"
   -v "$REPO_ROOT:/work" \
   -w /work \
   -e MPL_H700_SYSROOT=/work/H700/sysroot \
-  -e MPL_H700_VERSION="${MPL_H700_VERSION:-1.0.1}" \
+  -e MPL_H700_VERSION="${MPL_H700_VERSION:-1.0.2}" \
   -e MPL_H700_APP_ID="${MPL_H700_APP_ID:-RGFrontend}" \
   -e MPL_H700_ENTRY_NAME="${MPL_H700_ENTRY_NAME:-RGFrontend}" \
+  -e MPL_H700_FORCE_STOCK_ROUTE="${MPL_H700_FORCE_STOCK_ROUTE:-0}" \
   -e MPL_H700_BINARY_NAME="${MPL_H700_BINARY_NAME:-mpl_h700_frontend}" \
   -e MPL_HOST_UID="$(id -u)" \
   -e MPL_HOST_GID="$(id -g)" \

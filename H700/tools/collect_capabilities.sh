@@ -89,23 +89,15 @@ report_core_dir() {
   done
 }
 
-report_core_map() {
-  write_line "[core_map]"
+report_core_defaults() {
+  write_line "[core_defaults]"
   map_file="$(host_path /mnt/mod/ctrl/configs/CORES.txt)"
-  if [ ! -f "$map_file" ]; then
-    write_line "core_map=missing path=/mnt/mod/ctrl/configs/CORES.txt"
-    return
+  if [ -f "$map_file" ]; then
+    write_line "supplemental_core_map=present path=/mnt/mod/ctrl/configs/CORES.txt authoritative=0"
+  else
+    write_line "supplemental_core_map=missing path=/mnt/mod/ctrl/configs/CORES.txt authoritative=0"
   fi
-  write_line "core_map=present path=/mnt/mod/ctrl/configs/CORES.txt"
-  sed -n 's/^-//p' "$map_file" | while IFS=, read -r platform core rest; do
-    [ -n "$platform" ] || continue
-    [ -n "$core" ] || continue
-    [ -z "$rest" ] || continue
-    case "$core" in
-      */*|*' '*|''|.*|*[!A-Za-z0-9_.-]*) continue ;;
-    esac
-    write_line "default_core platform=$platform core=$core"
-  done
+  write_line "core_defaults=dmenu_builtin owner=RGFrontend priority=1"
 }
 
 report_configs() {
@@ -133,7 +125,9 @@ report_app_entries() {
 
 report_launcher_hints() {
   write_line "[launcher_hints]"
-  probe_path ra_launcher /mnt/mod/ctrl/RA_launch.sh
+  write_line "ra_launcher_order=mod_then_stock"
+  probe_path ra_launcher_mod /mnt/mod/ctrl/RA_launch.sh
+  probe_path ra_launcher_stock /mnt/vendor/deep/retro/retroarch
   for base in /mnt/mod /mnt/vendor /etc; do
     full_base="$(host_path "$base")"
     [ -d "$full_base" ] || continue
@@ -149,7 +143,7 @@ report_launcher_hints() {
 report_binary_info() {
   write_line "[binary_info]"
   if command -v file >/dev/null 2>&1; then
-    launcher="$(host_path /mnt/mod/ctrl/RA_launch.sh)"
+    launcher="$(host_path /mnt/vendor/deep/retro/retroarch)"
     [ -f "$launcher" ] && file "$launcher" 2>/dev/null | while IFS= read -r line; do write_line "file=${line#"$ROOT"}"; done
     core_dir="$(host_path /mnt/vendor/deep/retro/cores)"
     [ -d "$core_dir" ] && find "$core_dir" -maxdepth 1 -type f -name '*.so' 2>/dev/null | sort | head -n 20 | while IFS= read -r core; do
@@ -170,7 +164,7 @@ probe_path vendor_root /mnt/vendor
 probe_path mod_root /mnt/mod
 report_rom_roots
 report_core_dir
-report_core_map
+report_core_defaults
 report_configs
 report_app_entries
 report_launcher_hints

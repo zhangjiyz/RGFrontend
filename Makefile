@@ -9,6 +9,7 @@ SDL_TTF_LIBS ?= -lSDL2_ttf
 SDL_IMAGE_LIBS ?= -lSDL2_image
 
 CORE_SOURCES := \
+	src/catalog/arcade_name_database.cpp \
 	src/catalog/launch_hint_resolver.cpp \
 	src/catalog/library_builder.cpp \
 	src/catalog/path.cpp \
@@ -44,6 +45,7 @@ APP_SOURCES := \
 P0_TEST := $(TARGET_DIR)/p0_test
 P1_TEST := $(TARGET_DIR)/p1_test
 ANBERNIC_TEST := $(TARGET_DIR)/anbernic_provider_test
+ARCADE_NAME_DATABASE_TEST := $(TARGET_DIR)/arcade_name_database_test
 LAUNCH_ADAPTER_TEST := $(TARGET_DIR)/launch_adapter_test
 LAUNCH_HINT_RESOLVER_TEST := $(TARGET_DIR)/launch_hint_resolver_test
 H700_SYSTEM_SERVICE_TEST := $(TARGET_DIR)/h700_system_service_test
@@ -67,6 +69,10 @@ $(P1_TEST): tests/p1_test.cpp $(CORE_SOURCES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
 
 $(ANBERNIC_TEST): tests/anbernic_provider_test.cpp $(CORE_SOURCES)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
+
+$(ARCADE_NAME_DATABASE_TEST): tests/arcade_name_database_test.cpp $(CORE_SOURCES)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $^ -o $@
 
@@ -128,10 +134,11 @@ app-bundle: $(DESKTOP_DEMO)
 	  '</dict>' \
 	  '</plist>' >"$(APP_BUNDLE)/Contents/Info.plist"
 
-test: $(P0_TEST) $(P1_TEST) $(ANBERNIC_TEST) $(LAUNCH_ADAPTER_TEST) $(LAUNCH_HINT_RESOLVER_TEST) $(H700_SYSTEM_SERVICE_TEST) $(UI_MODEL_TEST) $(UI_SDL_INPUT_TEST) $(UI_SDL_SMOKE_TEST) $(DESKTOP_UI_APP_TEST)
+test: $(P0_TEST) $(P1_TEST) $(ANBERNIC_TEST) $(ARCADE_NAME_DATABASE_TEST) $(LAUNCH_ADAPTER_TEST) $(LAUNCH_HINT_RESOLVER_TEST) $(H700_SYSTEM_SERVICE_TEST) $(UI_MODEL_TEST) $(UI_SDL_INPUT_TEST) $(UI_SDL_SMOKE_TEST) $(DESKTOP_UI_APP_TEST)
 	./$(P0_TEST)
 	./$(P1_TEST)
 	./$(ANBERNIC_TEST)
+	./$(ARCADE_NAME_DATABASE_TEST)
 	./$(LAUNCH_ADAPTER_TEST)
 	./$(LAUNCH_HINT_RESOLVER_TEST)
 	./$(H700_SYSTEM_SERVICE_TEST)
@@ -145,6 +152,7 @@ test: $(P0_TEST) $(P1_TEST) $(ANBERNIC_TEST) $(LAUNCH_ADAPTER_TEST) $(LAUNCH_HIN
 	sh tests/shell/h700_autostart_test.sh
 	sh tests/shell/h700_build_in_ubuntu22_test.sh
 	sh tests/shell/h700_collect_capabilities_test.sh
+	sh tests/shell/h700_dmenu_core_defaults_test.sh
 	sh tests/shell/h700_system_immutability_test.sh
 
 clean:

@@ -39,6 +39,7 @@ int main() {
 
   const fs::path card = root / "mnt" / "sdcard";
   const fs::path gb = card / "Roms" / "GB";
+  const fs::path gbc_physical = card / "Roms" / "GBC";
   const fs::path gbc_alias = card / "Roms" / "Game Boy Color";
   const fs::path fc = card / "Roms" / "FC";
   const fs::path fc_hack = card / "Roms" / "FC hack";
@@ -58,7 +59,8 @@ int main() {
   const fs::path system = root / "system";
   fs::create_directories(gb / "media");
   fs::create_directories(gb / "videos");
-  fs::create_directories(gbc_alias);
+  fs::create_directories(gbc_physical);
+  fs::create_directory_symlink(gbc_physical.filename(), gbc_alias);
   fs::create_directories(fc);
   fs::create_directories(fc_hack);
   fs::create_directories(fc_hd);
@@ -99,6 +101,7 @@ int main() {
   fs::create_directories(gbc_alias / "__MACOSX");
   std::ofstream(gbc_alias / "__MACOSX" / "Bad.gbc") << "macos-dir";
   std::ofstream(fc / "Contra.zip") << "fc-rom";
+  std::ofstream(fc / "Empty.zip");
   std::ofstream(fc_hack / "Contra.zip") << "fc-hack-rom";
   std::ofstream(fc_hd / "HD.nes") << "fc-hd-rom";
   std::ofstream(md_picodrive / "Streets.zip") << "md-picodrive-rom";
@@ -146,6 +149,9 @@ int main() {
     metadata << "game: Contra\n";
     metadata << "file: Contra.zip\n";
     metadata << "sort-by: 0100\n";
+    metadata << "\ngame: Empty Pegasus Package\n";
+    metadata << "file: Empty.zip\n";
+    metadata << "sort-by: 0100-empty\n";
   }
   {
     std::ofstream metadata(fc_hack / "metadata.pegasus.txt");
@@ -267,6 +273,14 @@ int main() {
   assert(gb_platform);
   assert(gbc_platform);
   assert(gb_platform->directory_aliases.size() == 2);
+  int equivalent_gbc_roots = 0;
+  for (const std::string &directory : gbc_platform->rom_directories) {
+    std::error_code error;
+    if (fs::equivalent(fs::u8path(directory), gbc_physical, error) && !error) {
+      ++equivalent_gbc_roots;
+    }
+  }
+  assert(equivalent_gbc_roots == 1);
   const Platform *fbneo_platform = FindPlatformById(platforms, "fbneo");
   assert(fbneo_platform);
   assert(gbc_platform->directory_aliases.size() == 3);
@@ -281,10 +295,7 @@ int main() {
   assert(std::find(mame_platform->directory_aliases.begin(),
                    mame_platform->directory_aliases.end(),
                    "MAME FLY") != mame_platform->directory_aliases.end());
-  const Platform *fc_hd_platform = FindPlatformById(platforms, "fc_hd");
-  assert(fc_hd_platform);
-  assert(fc_hd_platform->display_name == "FC-HD");
-  assert(fc_hd_platform->launcher_id == "h700-retroarch-fc_hd");
+  assert(!FindPlatformById(platforms, "fc_hd"));
   const Platform *md_platform = FindPlatformById(platforms, "md");
   assert(md_platform);
   assert(std::find(md_platform->directory_aliases.begin(),
@@ -333,10 +344,10 @@ int main() {
   assert(first.rom_directory_games == 6);
   assert(first.emulationstation_games == 2);
   assert(first.anbernic_games == 4);
-  assert(first.pegasus_games == 11);
+  assert(first.pegasus_games == 10);
   assert(first.merged_duplicates == 5);
   assert(first.cache_records_written > 0);
-  assert(first.library.games.size() == 18);
+  assert(first.library.games.size() == 17);
 
   const Game *tetris = FindByTitle(first.library.games, "Tetris DX Metadata");
   const Game *kirby = FindByTitle(first.library.games, "Kirby Metadata");
@@ -359,9 +370,10 @@ int main() {
   assert(tetris);
   assert(kirby);
   assert(oracle);
+  assert(oracle->alternate_targets.empty());
   assert(contra);
   assert(contra_hack);
-  assert(hd_pack);
+  assert(!hd_pack);
   assert(md_picodrive_game);
   assert(nds_game);
   assert(psp_game);
@@ -377,6 +389,7 @@ int main() {
   assert(!FindByTitle(first.library.games, "._Oracle"));
   assert(!FindByTitle(first.library.games, "._1944"));
   assert(!FindByTitle(first.library.games, "orphan"));
+  assert(!FindByTitle(first.library.games, "Empty Pegasus Package"));
   assert(CountByTitle(first.library.games, "PicoGame") == 1);
   assert(!FindByTitle(first.library.games, "Balatro"));
   assert(CountByTitle(first.library.games, "小丑牌") == 1);
@@ -401,11 +414,6 @@ int main() {
   assert(contra_hack->collection_title == "FC hack");
   assert(contra->id != contra_hack->id);
   assert(contra->primary_target.path != contra_hack->primary_target.path);
-  assert(hd_pack->platform_id == "fc_hd");
-  assert(hd_pack->collection_title == "FC-HD");
-  assert(hd_pack->collection_id == "collection:FC-HD");
-  assert(hd_pack->launch_hint.platform_hint == "fc_hd");
-  assert(hd_pack->launch_hint.core_hint == "mesen_libretro.so");
   assert(md_picodrive_game->platform_id == "md");
   assert(md_picodrive_game->collection_title == "MD hack");
   assert(md_picodrive_game->collection_id == "collection:MD hack");
@@ -484,8 +492,8 @@ int main() {
 
   LibraryBuildReport second = LibraryBuilder().Build(platforms, cache.u8string());
   assert(second.skipped_roots > 0);
-  assert(second.cached_games == 18);
-  assert(second.library.games.size() == 18);
+  assert(second.cached_games == 17);
+  assert(second.library.games.size() == 17);
   const Game *cached_tetris = FindByTitle(second.library.games, "Tetris DX Metadata");
   assert(cached_tetris);
   assert(cached_tetris->source == "emulationstation");
@@ -512,9 +520,7 @@ int main() {
   assert(cached_ikaruga->collection_title == "NAOMI");
   assert(cached_ikaruga->display_title == "ikaruga/Treasure");
   const Game *cached_hd_pack = FindByTitle(second.library.games, "HD Pack");
-  assert(cached_hd_pack);
-  assert(cached_hd_pack->platform_id == "fc_hd");
-  assert(cached_hd_pack->launch_hint.core_hint == "mesen_libretro.so");
+  assert(!cached_hd_pack);
   const Game *cached_md_picodrive_game = FindByTitle(second.library.games, "怒之铁拳 Picodrive");
   assert(cached_md_picodrive_game);
   assert(cached_md_picodrive_game->platform_id == "md");

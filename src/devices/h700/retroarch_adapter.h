@@ -9,7 +9,7 @@ namespace mpl {
 
 struct H700RetroArchAdapterOptions {
   std::string request_path;
-  std::string retroarch_launcher = "/mnt/mod/ctrl/RA_launch.sh";
+  std::string retroarch_launcher = "/mnt/vendor/deep/retro/retroarch";
   std::vector<std::string> trusted_roots;
 };
 

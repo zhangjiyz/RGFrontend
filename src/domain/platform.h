@@ -23,6 +23,7 @@ struct Platform {
   std::vector<std::string> directory_aliases;
   std::vector<std::string> platform_aliases;
   std::vector<std::string> extensions;
+  std::string arcade_name_database_path;
   MediaRule media_rule;
   std::string launcher_id;
   LauncherKind launcher_kind = LauncherKind::RetroArch;

@@ -9,7 +9,7 @@ namespace mpl {
 
 struct H700LaunchRequestAdapterOptions {
   std::string request_path;
-  std::string retroarch_launcher = "/mnt/mod/ctrl/RA_launch.sh";
+  std::string retroarch_launcher = "/mnt/vendor/deep/retro/retroarch";
   std::string nds_launcher = "/mnt/vendor/ctrl/setNDS.sh";
   std::string psp_launcher = "/mnt/vendor/deep/ppsspp/PPSSPPSDL";
   std::string openbor_launcher = "/mnt/vendor/deep/openBOR/OpenBOR.dge";

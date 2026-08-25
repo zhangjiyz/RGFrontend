@@ -105,6 +105,33 @@ void SetOsd(UiSession *session, std::string text, int frames = 100) {
   session->osd_frames_remaining = frames;
 }
 
+bool HandleSearchTextInput(const SDL_Event &event, UiSession *session) {
+  if (!session || !session->search_active) return false;
+  if (event.type == SDL_TEXTINPUT) {
+    AppendSearchText(session, event.text.text);
+    return true;
+  }
+  if (event.type != SDL_KEYDOWN) return false;
+
+  const SDL_Keycode key = event.key.keysym.sym;
+  if (key == SDLK_ESCAPE) {
+    session->search_active = false;
+    SDL_StopTextInput();
+    return true;
+  }
+  if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+    session->search_active = false;
+    SDL_StopTextInput();
+    SetOsd(session, session->search_query.empty() ? "搜索已取消" : "搜索已应用");
+    return true;
+  }
+  if (key == SDLK_BACKSPACE) {
+    BackspaceSearchText(session);
+    return true;
+  }
+  return true;
+}
+
 void RefreshSystemStatus(UiSession *session, SystemService *service) {
   if (!session || !service) return;
   session->system_status = ToUiStatus(service->ReadStatus());
@@ -349,6 +376,14 @@ int RunDesktopUiApp(const DesktopUiOptions &options, DesktopUiResult *result) {
   int frames = 0;
   int hall_state = options.system_service ? options.system_service->ReadHallState() : -1;
   bool first_frame_logged = false;
+  const auto apply_action = [&](UiAction action) {
+    const bool search_was_active = session.search_active;
+    const UiLayout layout = ResolveUiLayout(options.width, options.height);
+    ApplyResult(&session, ApplyUiAction(&session, action, layout), options, result,
+                &running, &exit_reason, &return_code);
+    if (!search_was_active && session.search_active) SDL_StartTextInput();
+    if (search_was_active && !session.search_active) SDL_StopTextInput();
+  };
   while (running) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -357,26 +392,20 @@ int RunDesktopUiApp(const DesktopUiOptions &options, DesktopUiResult *result) {
         running = false;
         break;
       }
+      if (HandleSearchTextInput(event, &session)) continue;
       UiAction action;
       if (input_router.Translate(event, &action)) {
-        const UiLayout layout = ResolveUiLayout(options.width, options.height);
-        ApplyResult(&session, ApplyUiAction(&session, action, layout), options, result,
-                    &running, &exit_reason, &return_code);
+        apply_action(action);
       }
     }
 
     UiAction device_action;
     if (running && input_router.PollDeviceAction(&device_action)) {
-      const UiLayout layout = ResolveUiLayout(options.width, options.height);
-      ApplyResult(&session, ApplyUiAction(&session, device_action, layout), options, result,
-                  &running, &exit_reason, &return_code);
+      apply_action(device_action);
     }
 
     if (scripted_index < options.scripted_actions.size()) {
-      const UiLayout layout = ResolveUiLayout(options.width, options.height);
-      ApplyResult(&session,
-                  ApplyUiAction(&session, options.scripted_actions[scripted_index], layout),
-                  options, result, &running, &exit_reason, &return_code);
+      apply_action(options.scripted_actions[scripted_index]);
       ++scripted_index;
     }
 
@@ -414,7 +443,8 @@ int RunDesktopUiApp(const DesktopUiOptions &options, DesktopUiResult *result) {
     if (options.max_frames == 0) SDL_Delay(16);
   }
 
-  game_state_store.LimitRecent(&session.library.games, 20);
+  game_state_store.LimitRecent(&session.library.games, 100);
+  if (session.search_active) SDL_StopTextInput();
   const bool game_saved = game_state_store.Save(session.library.games);
   const bool ui_saved = ui_state_store.Save(ExportUiState(session));
   input_router.Close();

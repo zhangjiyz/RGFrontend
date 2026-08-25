@@ -22,7 +22,16 @@ std::vector<std::string> RomDirectories(const H700RegistryOptions &options,
   std::vector<std::string> result;
   for (const std::string &card : options.card_roots) {
     for (const std::string &name : names) {
-      result.push_back((fs::u8path(card) / "Roms" / fs::u8path(name)).u8string());
+      const fs::path candidate = fs::u8path(card) / "Roms" / fs::u8path(name);
+      bool duplicate = false;
+      for (const std::string &existing : result) {
+        std::error_code error;
+        if (fs::equivalent(candidate, fs::u8path(existing), error) && !error) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) result.push_back(candidate.u8string());
     }
   }
   return result;
@@ -31,6 +40,14 @@ std::vector<std::string> RomDirectories(const H700RegistryOptions &options,
 bool FileExists(const std::string &path) {
   std::error_code error;
   return fs::is_regular_file(fs::u8path(path), error);
+}
+
+bool UsesArcadeNameDatabase(const std::string &platform_id) {
+  for (const char *id : {"atomiswave", "cps1", "cps2", "cps3", "fbneo", "hbmame",
+                         "mame", "naomi", "neogeo", "pgm2", "varcade"}) {
+    if (platform_id == id) return true;
+  }
+  return false;
 }
 
 Platform RetroArchPlatform(const H700RegistryOptions &options, std::string id,
@@ -118,7 +135,6 @@ std::vector<Platform> LoadH700Platforms(const H700RegistryOptions &options) {
        {".zip", ".7z"}, {"fbn"}},
       {"fc", "FC", {"FC", "NES", "FC hack"}, {".nes", ".zip", ".7z"},
        {"nes", "famicom"}},
-      {"fc_hd", "FC-HD", {"FC-HD"}, {".nes", ".zip", ".7z"}, {"mesen"}},
       {"fds", "FDS", {"FDS"}, {".fds", ".zip", ".7z"}, {}},
       {"gb", "GB", {"GB", "Game Boy"}, {".gb", ".zip", ".7z"}, {"gameboy", "dmg"}},
       {"gbc", "GBC", {"GBC", "gbc", "Game Boy Color"}, {".gbc", ".zip", ".7z"},
@@ -127,7 +143,7 @@ std::vector<Platform> LoadH700Platforms(const H700RegistryOptions &options) {
        {"gameboyadvance"}},
       {"gg", "GG", {"GG"}, {".gg", ".zip", ".7z"}, {"gamegear"}},
       {"gw", "GW", {"GW"}, {".mgw", ".zip", ".7z"}, {"gameandwatch"}},
-      {"hbmame", "HBMAME", {"HBMAME"}, {".zip", ".7z"}, {}},
+      {"hbmame", "H.Brew", {"HBMAME"}, {".zip", ".7z"}, {}},
       {"lynx", "LYNX", {"LYNX"}, {".lnx", ".zip", ".7z"}, {"atarilynx"}},
       {"mame", "MAME",
        {"MAME", "MAME ACT", "MAME ETC", "MAME FLY", "MAME FLY V",
@@ -199,6 +215,9 @@ std::vector<Platform> LoadH700Platforms(const H700RegistryOptions &options) {
       platform.diagnostics.push_back("disabled: Saturn/SS launch is pending H700 validation");
     }
     platform.platform_aliases = spec.aliases;
+    if (UsesArcadeNameDatabase(platform.id)) {
+      platform.arcade_name_database_path = options.arcade_name_database;
+    }
     platforms.push_back(std::move(platform));
     sort_order += 10;
     if (spec.id == std::string("hbmame")) {

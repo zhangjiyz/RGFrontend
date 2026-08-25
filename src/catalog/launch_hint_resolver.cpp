@@ -93,7 +93,7 @@ void ApplyCoreHint(const std::string &lower, LaunchHint *hint) {
       {"vbam", "vbam_libretro.so", "gba", "retroarch"},
       {"vba-m", "vbam_libretro.so", "gba", "retroarch"},
       {"gambatte", "gambatte_libretro.so", "gb", "retroarch"},
-      {"mesen", "mesen_libretro.so", "fc_hd", "retroarch"},
+      {"mesen", "mesen_libretro.so", "fc", "retroarch"},
       {"fceumm", "fceumm_libretro.so", "fc", "retroarch"},
       {"snes9x", "snes9x_libretro.so", "sfc", "retroarch"},
       {"picodrive", "picodrive_libretro.so", "md", "retroarch"},

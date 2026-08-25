@@ -42,14 +42,19 @@ int main() {
   assert(KeyAction(SDLK_RIGHT) == UiAction::Right);
   assert(KeyAction(SDLK_RETURN) == UiAction::Confirm);
   assert(KeyAction(SDLK_ESCAPE) == UiAction::Back);
-  assert(KeyAction(SDLK_x) == UiAction::ToggleTitles);
-  assert(KeyAction(SDLK_f) == UiAction::ToggleFavorite);
+  assert(KeyAction(SDLK_x) == UiAction::ToggleFavorite);
+  assert(KeyAction(SDLK_f) == UiAction::Search);
   assert(KeyAction(SDLK_y) == UiAction::OpenCoreSelect);
   assert(KeyAction(SDLK_g) == UiAction::ToggleFullscreenGrid);
   assert(KeyAction(SDLK_MINUS) == UiAction::GridSmaller);
   assert(KeyAction(SDLK_EQUALS) == UiAction::GridLarger);
   assert(KeyAction(SDLK_t) == UiAction::QuickTheme);
-  assert(KeyAction(SDLK_b) == UiAction::NextBgm);
+  SDL_Event bgm_key{};
+  bgm_key.type = SDL_KEYDOWN;
+  bgm_key.key.repeat = 0;
+  bgm_key.key.keysym.sym = SDLK_b;
+  UiAction bgm_action = UiAction::Menu;
+  assert(!MapSdlEventToUiAction(bgm_key, &bgm_action));
   assert(KeyAction(SDLK_TAB) == UiAction::TabNext);
   assert(KeyAction(SDLK_RIGHTBRACKET) == UiAction::TabNext);
   assert(KeyAction(SDLK_LEFTBRACKET) == UiAction::TabPrevious);
@@ -68,19 +73,19 @@ int main() {
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_DPAD_LEFT) == UiAction::Left);
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_A) == UiAction::Confirm);
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_B) == UiAction::Back);
-  assert(ButtonAction(SDL_CONTROLLER_BUTTON_X) == UiAction::ToggleTitles);
+  assert(ButtonAction(SDL_CONTROLLER_BUTTON_X) == UiAction::ToggleFavorite);
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_Y) == UiAction::OpenCoreSelect);
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) == UiAction::TabNext);
   assert(ButtonAction(SDL_CONTROLLER_BUTTON_START) == UiAction::PageNext);
-  assert(ButtonAction(SDL_CONTROLLER_BUTTON_BACK) == UiAction::PagePrevious);
+  assert(ButtonAction(SDL_CONTROLLER_BUTTON_BACK) == UiAction::Search);
 
   assert(JoyButtonAction(0) == UiAction::Confirm);
   assert(JoyButtonAction(1) == UiAction::Back);
-  assert(JoyButtonAction(2) == UiAction::ToggleTitles);
+  assert(JoyButtonAction(2) == UiAction::ToggleFavorite);
   assert(JoyButtonAction(3) == UiAction::OpenCoreSelect);
   assert(JoyButtonAction(4) == UiAction::TabPrevious);
   assert(JoyButtonAction(5) == UiAction::TabNext);
-  assert(JoyButtonAction(8) == UiAction::PagePrevious);
+  assert(JoyButtonAction(8) == UiAction::Search);
   assert(JoyButtonAction(9) == UiAction::PageNext);
 
   SDL_Event quit{};

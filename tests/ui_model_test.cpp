@@ -76,6 +76,66 @@ int main() {
   assert(SelectedGame(stale_platform_session)->id == "gbc-zelda");
 
   const UiLayout layout = ResolveUiLayout(720, 480);
+
+  UiSession search_session = CreateUiSession(library, UiState{"all", "gb-tetris", 0, "grid"});
+  ApplyUiAction(&search_session, UiAction::Search, layout);
+  assert(search_session.search_active);
+  assert(AppendSearchText(&search_session, "MET"));
+  assert(search_session.search_query == "MET");
+  assert(search_session.visible_game_indices.size() == 1);
+  assert(SelectedGame(search_session));
+  assert(SelectedGame(search_session)->id == "gba-metroid");
+  assert(BackspaceSearchText(&search_session));
+  assert(search_session.search_query == "ME");
+  ApplyUiAction(&search_session, UiAction::Back, layout);
+  assert(!search_session.search_active);
+  assert(search_session.search_query == "ME");
+  ApplyUiAction(&search_session, UiAction::Back, layout);
+  assert(search_session.search_query.empty());
+  assert(search_session.visible_game_indices.size() == 3);
+  ApplyUiAction(&search_session, UiAction::Search, layout);
+  assert(AppendSearchText(&search_session, "动作"));
+  assert(BackspaceSearchText(&search_session));
+  assert(search_session.search_query == "动");
+  assert(BackspaceSearchText(&search_session));
+  assert(search_session.search_query.empty());
+
+  UiSession keyboard_session =
+      CreateUiSession(library, UiState{"all", "gb-tetris", 0, "grid"});
+  ApplyUiAction(&keyboard_session, UiAction::Search, layout);
+  assert(keyboard_session.search_keyboard_index == 0);
+  UiActionResult keyboard_input =
+      ApplyUiAction(&keyboard_session, UiAction::Confirm, layout);
+  assert(keyboard_input.intent == UiIntent::None);
+  assert(keyboard_session.search_query == "1");
+  ApplyUiAction(&keyboard_session, UiAction::Right, layout);
+  assert(keyboard_session.search_keyboard_index == 1);
+  ApplyUiAction(&keyboard_session, UiAction::Down, layout);
+  assert(keyboard_session.search_keyboard_index == 11);
+  ApplyUiAction(&keyboard_session, UiAction::Left, layout);
+  assert(keyboard_session.search_keyboard_index == 10);
+  ApplyUiAction(&keyboard_session, UiAction::Up, layout);
+  assert(keyboard_session.search_keyboard_index == 0);
+  ApplyUiAction(&keyboard_session, UiAction::ToggleFavorite, layout);
+  assert(keyboard_session.search_query.empty());
+  assert(!keyboard_session.library.games[0].favorite);
+  assert(AppendSearchText(&keyboard_session, "动作"));
+  ApplyUiAction(&keyboard_session, UiAction::ToggleFavorite, layout);
+  assert(keyboard_session.search_query == "动");
+  keyboard_session.search_keyboard_index = 29;
+  ApplyUiAction(&keyboard_session, UiAction::Confirm, layout);
+  assert(keyboard_session.search_query.empty());
+  keyboard_session.search_keyboard_index = 39;
+  ApplyUiAction(&keyboard_session, UiAction::Down, layout);
+  assert(keyboard_session.search_keyboard_index == kSearchKeyboardOkIndex);
+  ApplyUiAction(&keyboard_session, UiAction::Up, layout);
+  assert(keyboard_session.search_keyboard_index == 35);
+  ApplyUiAction(&keyboard_session, UiAction::OpenCoreSelect, layout);
+  assert(!keyboard_session.search_active);
+  assert(keyboard_session.view == UiView::Library);
+  assert(SearchKeyboardKeyLabel(37) == "空格");
+  assert(SearchKeyboardKeyLabel(kSearchKeyboardOkIndex) == "确定");
+
   UiActionResult launch = ApplyUiAction(&session, UiAction::Confirm, layout);
   assert(launch.intent == UiIntent::LaunchGame);
   assert(launch.game_id == "gbc-zelda");
@@ -83,6 +143,8 @@ int main() {
   ApplyUiAction(&session, UiAction::ToggleFavorite, layout);
   assert(SelectedGame(session)->favorite);
   assert(session.navigation[1].game_count == 2);
+  assert(session.osd_text == "已加入收藏");
+  assert(session.osd_frames_remaining == 100);
 
   UiState exported = ExportUiState(session);
   assert(exported.active_platform_id == "collection:动作合集");
@@ -197,6 +259,41 @@ int main() {
   assert(session.view == UiView::Library);
   assert(SelectedGame(session)->user_core_hint == "gpsp_libretro.so");
   assert(session.osd_text == "核心 gpSP");
+
+  for (const std::string &platform_id : {"cps1", "cps2", "cps3"}) {
+    Library cps_library;
+    cps_library.platforms = {PlatformDef(platform_id, platform_id, 10)};
+    cps_library.games = {GameDef(platform_id + "-game", platform_id, "Game")};
+    UiSession cps_session = CreateUiSession(
+        cps_library, UiState{"all", platform_id + "-game", 0, "grid"});
+    const std::vector<UiCoreOption> cps_cores = CoreOptionsForGame(cps_session);
+    assert(!cps_cores.empty());
+    assert(cps_cores.front().label == "自动: FB Alpha");
+  }
+  assert(CoreDisplayName("fbalpha_libretro.so") == "FB Alpha");
+
+  struct DmenuDefaultCase {
+    const char *platform_id;
+    const char *display_name;
+  };
+  const DmenuDefaultCase dmenu_defaults[] = {
+      {"fds", "自动: Nestopia"},
+      {"fbneo", "自动: FinalBurn Neo"},
+      {"hbmame", "自动: Nebula ARM Legacy"},
+      {"mame", "自动: MAME 2003-Plus"},
+      {"n64", "自动: ParaLLEl N64"},
+      {"neogeo", "自动: FB Alpha 2012 Neo Geo"},
+      {"sfc", "自动: Snes9x"},
+  };
+  for (const DmenuDefaultCase &entry : dmenu_defaults) {
+    Library core_library;
+    core_library.platforms = {PlatformDef(entry.platform_id, entry.platform_id, 10)};
+    core_library.games = {GameDef("core-game", entry.platform_id, "Game")};
+    UiSession core_session =
+        CreateUiSession(core_library, UiState{"all", "core-game", 0, "grid"});
+    assert(CurrentCoreDisplayName(core_session) == entry.display_name);
+  }
+
   ApplyUiAction(&session, UiAction::GridLarger, layout);
   assert(session.preferences.grid_size == UiGridSize::Medium);
   ApplyUiAction(&session, UiAction::QuickTheme, layout);
@@ -207,9 +304,10 @@ int main() {
   assert(last_theme.preferences.theme_color == kUiThemeColorCount - 1);
   ApplyUiAction(&last_theme, UiAction::QuickTheme, layout);
   assert(last_theme.preferences.theme_color == 0);
-  ApplyUiAction(&session, UiAction::NextBgm, layout);
-  assert(session.preferences.bgm_mode == UiBgmMode::Music);
-  assert(session.bgm_track_revision == 1);
+  UiState legacy_music_state;
+  legacy_music_state.bgm_mode = 0;
+  assert(CreateUiSession(library, legacy_music_state).preferences.bgm_mode ==
+         UiBgmMode::GameAudio);
   session.notice = UiNotice{true, "启动失败", "ROM文件不存在或无法读取。"};
   ApplyUiAction(&session, UiAction::Back, layout);
   assert(!session.notice.visible);
@@ -273,13 +371,40 @@ int main() {
   assert(scroll_session.selected_visible_index == 16);
   assert(scroll_session.scroll_offset == 4);
   ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  assert(scroll_session.selected_visible_index == 12);
+  assert(scroll_session.scroll_offset == 4);
   ApplyUiAction(&scroll_session, UiAction::Up, layout);
+  assert(scroll_session.selected_visible_index == 8);
+  assert(scroll_session.scroll_offset == 4);
   ApplyUiAction(&scroll_session, UiAction::Up, layout);
   assert(scroll_session.selected_visible_index == 4);
   assert(scroll_session.scroll_offset == 4);
   ApplyUiAction(&scroll_session, UiAction::Up, layout);
   assert(scroll_session.selected_visible_index == 0);
   assert(scroll_session.scroll_offset == 0);
+
+  for (const auto &resolution : {std::pair{720, 480}, std::pair{640, 480},
+                                 std::pair{720, 720}}) {
+    Library pegasus_library = page_library;
+    for (Game &game : pegasus_library.games) game.source = "pegasus";
+    UiState pegasus_state{"all", "gba-00", 0, "grid"};
+    pegasus_state.fullscreen_grid = true;
+    UiSession pegasus_session = CreateUiSession(pegasus_library, pegasus_state);
+    const UiLayout pegasus_layout = ResolveUiLayout(resolution.first, resolution.second);
+    for (int step = 0; step < 6; ++step) {
+      ApplyUiAction(&pegasus_session, UiAction::Down, pegasus_layout);
+    }
+    const int columns = pegasus_session.preferences.fullscreen_grid ? 5 : 4;
+    const int bottom_row = pegasus_session.selected_visible_index / columns;
+    const int scroll_row = pegasus_session.scroll_offset / columns;
+    const int expected_visible_rows = resolution.second >= 700 ? 3 : 2;
+    assert(bottom_row - scroll_row == expected_visible_rows);
+    ApplyUiAction(&pegasus_session, UiAction::Up, pegasus_layout);
+    assert(pegasus_session.selected_visible_index / columns == bottom_row - 1);
+    assert(pegasus_session.scroll_offset / columns == scroll_row);
+    assert(pegasus_session.selected_visible_index / columns - scroll_row ==
+           expected_visible_rows - 1);
+  }
 
   const UiLayout tiny = ResolveUiLayout(320, 240);
   assert(tiny.grid_columns >= 2);

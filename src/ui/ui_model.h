@@ -27,9 +27,9 @@ enum class UiAction {
   QuickTheme,
   JumpPrevious,
   JumpNext,
-  NextBgm,
   AdjustVolumeDown,
   AdjustVolumeUp,
+  Search,
   TabPrevious,
   TabNext,
   PagePrevious,
@@ -83,13 +83,15 @@ enum class UiGridSize {
 };
 
 enum class UiBgmMode {
-  Music,
-  GameAudio,
-  Muted,
+  GameAudio = 1,
+  Muted = 2,
 };
 
 constexpr int kUiThemeColorCount = 25;
 constexpr int kUiStartupLogoStyleCount = 2;
+constexpr int kSearchKeyboardColumns = 10;
+constexpr int kSearchKeyboardGridKeyCount = 40;
+constexpr int kSearchKeyboardOkIndex = 40;
 
 struct UiPreferences {
   UiGridSize grid_size = UiGridSize::Medium;
@@ -164,7 +166,9 @@ struct UiSession {
   bool include_empty_platforms = false;
   bool menu_button_held = false;
   bool menu_chord_used = false;
-  int bgm_track_revision = 0;
+  bool search_active = false;
+  std::string search_query;
+  int search_keyboard_index = 0;
 };
 
 UiSession CreateUiSession(Library library, const UiState &state,
@@ -172,6 +176,9 @@ UiSession CreateUiSession(Library library, const UiState &state,
 UiState ExportUiState(const UiSession &session);
 UiActionResult ApplyUiAction(UiSession *session, UiAction action,
                              const UiLayout &layout = ResolveUiLayout(720, 480));
+bool AppendSearchText(UiSession *session, const std::string &text);
+bool BackspaceSearchText(UiSession *session);
+std::string SearchKeyboardKeyLabel(int index);
 const Game *SelectedGame(const UiSession &session);
 Game *SelectedGame(UiSession *session);
 std::vector<const Game *> VisibleGames(const UiSession &session);

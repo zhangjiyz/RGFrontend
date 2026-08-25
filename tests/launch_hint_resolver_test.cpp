@@ -59,7 +59,7 @@ int main() {
         "-e LIBRETRO /data/data/com.retroarch.aarch64/cores/mesen_libretro_android.so");
     assert(hint.kind == LaunchHintKind::AndroidActivity);
     assert(hint.launcher_alias == "retroarch");
-    assert(hint.platform_hint == "fc_hd");
+    assert(hint.platform_hint == "fc");
     assert(hint.core_hint == "mesen_libretro.so");
   }
 

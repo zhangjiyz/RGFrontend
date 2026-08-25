@@ -100,10 +100,10 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         *action = UiAction::Back;
         return true;
       case SDLK_x:
-        *action = UiAction::ToggleTitles;
+        *action = UiAction::ToggleFavorite;
         return true;
       case SDLK_f:
-        *action = UiAction::ToggleFavorite;
+        *action = UiAction::Search;
         return true;
       case SDLK_y:
         *action = UiAction::OpenCoreSelect;
@@ -120,9 +120,6 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         return true;
       case SDLK_t:
         *action = UiAction::QuickTheme;
-        return true;
-      case SDLK_b:
-        *action = UiAction::NextBgm;
         return true;
       case SDLK_TAB:
       case SDLK_RIGHTBRACKET:
@@ -170,7 +167,7 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         *action = UiAction::Back;
         return true;
       case SDL_CONTROLLER_BUTTON_X:
-        *action = UiAction::ToggleTitles;
+        *action = UiAction::ToggleFavorite;
         return true;
       case SDL_CONTROLLER_BUTTON_Y:
         *action = UiAction::OpenCoreSelect;
@@ -185,7 +182,7 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         *action = UiAction::PageNext;
         return true;
       case SDL_CONTROLLER_BUTTON_BACK:
-        *action = UiAction::PagePrevious;
+        *action = UiAction::Search;
         return true;
       default:
         return false;
@@ -201,7 +198,7 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         *action = UiAction::Back;
         return true;
       case 2:
-        *action = UiAction::ToggleTitles;
+        *action = UiAction::ToggleFavorite;
         return true;
       case 3:
         *action = UiAction::OpenCoreSelect;
@@ -213,7 +210,7 @@ bool MapSdlEventToUiAction(const SDL_Event &event, UiAction *action) {
         *action = UiAction::TabNext;
         return true;
       case 8:
-        *action = UiAction::PagePrevious;
+        *action = UiAction::Search;
         return true;
       case 9:
         *action = UiAction::PageNext;
@@ -272,7 +269,7 @@ bool SdlInputRouter::PollDeviceAction(UiAction *action) {
             *action = UiAction::Back;
             return true;
           case BTN_NORTH:
-            *action = UiAction::ToggleTitles;
+            *action = UiAction::ToggleFavorite;
             return true;
 #ifdef BTN_C
           case BTN_C:
@@ -289,7 +286,7 @@ bool SdlInputRouter::PollDeviceAction(UiAction *action) {
             *action = UiAction::Menu;
             return true;
           case BTN_TL:
-            *action = UiAction::ToggleFavorite;
+            *action = UiAction::Search;
             return true;
           case BTN_SELECT:
             *action = UiAction::PagePrevious;

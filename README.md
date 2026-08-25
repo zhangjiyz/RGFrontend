@@ -76,61 +76,69 @@ verified.
 - `A`: confirm, launch a game, or save a choice.
 - `B`: go back or cancel.
 - `L1 / R1`: switch platform or top-level category.
-- `L2 / R2`: scroll the game description.
-- `X`: show or hide cover titles.
+- `L2 / R2`: move one page backward or forward.
+- `X`: favorite or unfavorite.
 - `Y`: open the current game's core selection.
-- `Select`: favorite or unfavorite.
+- `Select`: search the current game list with the built-in on-screen keyboard.
 - `Start / Menu`: open settings.
 - `Volume - / +`: adjust system volume.
 - `Power`: suspend.
 
-## H700 Platform Test Status
+## H700 Vendor Platform Mapping and RGFrontend Test Status
 
-| Platform | Tested? |
+The 54 platforms below map directly to platform definitions found in the vendor
+`dmenu.bin` of the inspected H700 stock firmware.
+
+A vendor dmenu mapping means that the menu contains platform recognition such
+as a name, icon, file extensions, or launcher mapping. It does not guarantee
+that every H700 firmware variant contains every optional executable or core,
+or that every game has been validated. `YES` means that an RGFrontend launch
+path has been exercised; `TBD` means that complete validation is still pending.
+
+| Platform | RGFrontend status |
 | --- |---------|
-| A2600 | TBD     |
-| A5200 | TBD     |
-| A7800 | TBD     |
+| A2600 | YES     |
+| A5200 | YES     |
+| A7800 | YES     |
 | A800 | TBD     |
 | AMIGA | TBD     |
 | ATARIST | TBD     |
-| ATOMISWAVE | TBD     |
+| ATOMISWAVE | YES     |
 | C64 | TBD     |
-| CPS1 | TBD     |
-| CPS2 | TBD     |
-| CPS3 | TBD     |
+| CPS1 | YES     |
+| CPS2 | YES     |
+| CPS3 | YES     |
 | DOS | YES     |
 | DREAMCAST | YES     |
-| EASYRPG | TBD     |
+| EASYRPG | YES     |
 | FBNEO | YES     |
 | FC | YES     |
-| FC-HD | YES     |
-| FDS | TBD     |
+| FDS | YES     |
 | GB | YES     |
 | GBC | YES     |
 | GBA | YES     |
 | GG | YES     |
-| GW | TBD     |
-| HBMAME | TBD     |
+| GW | YES     |
+| HBMAME | YES     |
 | JAVA | YES     |
-| LYNX | TBD     |
+| LYNX | YES     |
 | MAME | YES     |
 | MD | YES     |
 | MDCD | YES     |
-| MSX | TBD     |
+| MSX | YES     |
 | N64 | YES     |
 | NAOMI | YES     |
 | NDS | YES     |
 | NEOCD | YES     |
 | NEOGEO | YES     |
 | NGP | YES     |
-| ONS | TBD     |
+| ONS | YES     |
 | OPENBOR | YES     |
 | PCE | YES     |
 | PCECD | YES     |
 | PGM2 | TBD     |
 | PICO | YES     |
-| POKE | TBD     |
+| POKE | YES     |
 | PORTS | YES     |
 | PS | YES     |
 | PSP | YES     |
@@ -139,8 +147,8 @@ verified.
 | SEGA32X | YES     |
 | SFC | YES     |
 | SMS | YES     |
-| VARCADE | TBD     |
-| VB | TBD     |
+| VARCADE | YES     |
+| VB | YES     |
 | VIC20 | TBD     |
 | WS | YES     |
 

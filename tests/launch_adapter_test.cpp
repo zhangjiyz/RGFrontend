@@ -118,7 +118,7 @@ int main() {
   const Platform *java = FindPlatformById(capabilities.platforms, "java");
   const Platform *saturn = FindPlatformById(capabilities.platforms, "saturn");
   assert(gbc);
-  assert(fc_hd);
+  assert(!fc_hd);
   assert(gba);
   assert(nds);
   assert(ps);
@@ -146,7 +146,6 @@ int main() {
   assert(java->launcher_kind == LauncherKind::Standalone);
   assert(saturn->launcher_id == "h700-standalone-saturn");
   assert(saturn->launcher_kind == LauncherKind::Standalone);
-  assert(fc_hd->launcher_id == "h700-retroarch-fc_hd");
   assert(gbc->launcher_id == "h700-retroarch-gbc");
   assert(gba->launcher_id == "h700-retroarch-gba");
   assert(ps->launcher_id == "h700-retroarch-ps");

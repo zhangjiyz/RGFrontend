@@ -8,12 +8,18 @@ LOG_DIR="${MPL_LOG_DIR:-$STATE_DIR/logs}"
 LOG_FILE="$LOG_DIR/h700-launch.log"
 MMC_ROOT="${MPL_MMC_ROOT:-/mnt/mmc}"
 SDCARD_ROOT="${MPL_SDCARD_ROOT:-/mnt/sdcard}"
-SYSTEM_LAUNCHER="${MPL_H700_RA_LAUNCHER:-/mnt/mod/ctrl/RA_launch.sh}"
+MOD_RA_LAUNCHER="${MPL_H700_MOD_RA_LAUNCHER:-/mnt/mod/ctrl/RA_launch.sh}"
 MPL_RA_LAUNCHER="${MPL_H700_MPL_RA_LAUNCHER:-$SCRIPT_DIR/launchers/RA_launch_mpl.sh}"
 PREPARE_RA_LAUNCHER="${MPL_H700_PREPARE_RA_LAUNCHER:-$SCRIPT_DIR/prepare_ra_launcher.sh}"
+RETROARCH_BIN="${MPL_H700_RA_LAUNCHER:-/mnt/vendor/deep/retro/retroarch}"
+RETROARCH_WORKDIR="${MPL_H700_RA_WORKDIR:-/mnt/vendor/deep/retro}"
+RETROARCH_CONFIG="${MPL_H700_RA_CONFIG:-/.config/retroarch/retroarch.cfg}"
+RETROARCH_BASE_CONFIG="${MPL_H700_RA_BASE_CONFIG:-/mnt/vendor/deep/retro/retroarch.cfg}"
+RETROARCH_APPEND_CONFIG="${MPL_H700_RA_APPEND_CONFIG:-$STATE_DIR/runtime/retroarch-rgfrontend.cfg}"
 GAME_VOLUME_SCRIPT="${MPL_H700_GAME_VOLUME_SCRIPT:-$SCRIPT_DIR/game_volume.sh}"
 CORE_DIR="${MPL_H700_CORE_DIR:-/mnt/vendor/deep/retro/cores}"
-CORES_MAP="${MPL_H700_CORES_MAP:-/mnt/mod/ctrl/configs/CORES.txt}"
+VERTICAL_ARCADE_LIST="${MPL_H700_VERTICAL_ARCADE_LIST:-/mnt/mod/ctrl/configs/varc.cfg}"
+ARCADE_ROM_LINK_ROOT="${MPL_H700_ARCADE_ROM_LINK_ROOT:-$STATE_DIR/runtime/arcade-roms}"
 NDS_LAUNCHER="${MPL_H700_NDS_LAUNCHER:-/mnt/vendor/ctrl/setNDS.sh}"
 NDS_WORKDIR="${MPL_H700_NDS_WORKDIR:-/mnt/vendor/deep/drastic}"
 NDS_CONTROL_STATE_PATH="${MPL_H700_NDS_CONTROL_STATE_PATH:-/sys/class/power_supply/axp2202-battery/nds_esckey}"
@@ -95,7 +101,6 @@ platform_folder() {
     easyrpg) printf 'EASYRPG\n' ;;
     fbneo) printf 'FBNEO\n' ;;
     fc) printf 'FC\n' ;;
-    fc_hd) printf 'FC-HD\n' ;;
     fds) printf 'FDS\n' ;;
     gb) printf 'GB\n' ;;
     gbc) printf 'GBC\n' ;;
@@ -146,12 +151,6 @@ core_is_safe_libretro() {
   esac
 }
 
-core_from_map() {
-  folder="$1"
-  [ -f "$CORES_MAP" ] || return 1
-  sed -n "s/^-$folder,//p" "$CORES_MAP" | sed -n '1p'
-}
-
 first_existing_core() {
   for core in "$@"; do
     core_is_safe_libretro "$core" || continue
@@ -160,6 +159,51 @@ first_existing_core() {
     return 0
   done
   return 1
+}
+
+default_core_for_platform() {
+  case "$1" in
+    a2600) printf 'stella2014_libretro.so\n' ;;
+    a5200) printf 'a5200_libretro.so\n' ;;
+    a7800) printf 'prosystem_libretro.so\n' ;;
+    a800) printf 'atari800_libretro.so\n' ;;
+    amiga) printf 'puae_libretro.so\n' ;;
+    atarist) printf 'hatari_libretro.so\n' ;;
+    atomiswave|dreamcast|naomi) printf 'flycast_libretro.so\n' ;;
+    c64) printf 'vice_x64_libretro.so\n' ;;
+    cps1|cps2|cps3) printf 'fbalpha_libretro.so\n' ;;
+    fbneo) printf 'fbneo_libretro.so\n' ;;
+    neogeo) printf 'fbalpha2012_neogeo_libretro.so\n' ;;
+    dos) printf 'dosbox_pure_libretro.so\n' ;;
+    easyrpg) printf 'easyrpg_libretro.so\n' ;;
+    fc) printf 'fceumm_libretro.so\n' ;;
+    fds) printf 'nestopia_libretro.so\n' ;;
+    gb|gbc) printf 'gambatte_libretro.so\n' ;;
+    gba) printf 'mgba_libretro.so\n' ;;
+    gg|md|mdcd|sms) printf 'genesis_plus_gx_libretro.so\n' ;;
+    gw) printf 'gw_libretro.so\n' ;;
+    hbmame) printf 'nebularm_legacy_libretro.so\n' ;;
+    lynx) printf 'handy_libretro.so\n' ;;
+    mame) printf 'mame2003_plus_libretro.so\n' ;;
+    msx) printf 'bluemsx_libretro.so\n' ;;
+    n64) printf 'parallel_n64_libretro.so\n' ;;
+    neocd) printf 'neocd_libretro.so\n' ;;
+    ngp) printf 'mednafen_ngp_libretro.so\n' ;;
+    ons) printf 'onscripter_libretro.so\n' ;;
+    pce|pcecd) printf 'mednafen_pce_fast_libretro.so\n' ;;
+    pgm2) printf 'mame2022xtreme_libretro.so\n' ;;
+    pico) printf 'fake08_libretro.so\n' ;;
+    poke) printf 'pokemini_libretro.so\n' ;;
+    ps) printf 'pcsx_rearmed_libretro.so\n' ;;
+    scummvm) printf 'scummvm_libretro.so\n' ;;
+    sega32x) printf 'picodrive_libretro.so\n' ;;
+    sfc) printf 'snes9x_libretro.so\n' ;;
+    varcade) printf 'fbneo_libretro.so\n' ;;
+    vb) printf 'mednafen_vb_libretro.so\n' ;;
+    vic20) printf 'vice_xvic_libretro.so\n' ;;
+    ws) printf 'mednafen_wswan_libretro.so\n' ;;
+    *) return 1 ;;
+  esac
 }
 
 mixer_value_for_level() {
@@ -274,15 +318,15 @@ mapped_core_hint() {
         fbneo_oem_libretro.so
       ;;
     fbneo:fbneo_libretro.so|fbneo:fbneo_G_libretro.so|fbneo:fbneo_oem_libretro.so|\
-    fbneo:fbalpha2012_libretro.so|fbneo:mame2003_xtreme_libretro.so|\
+    fbneo:fbalpha_libretro.so|fbneo:fbalpha2012_libretro.so|fbneo:mame2003_xtreme_libretro.so|\
     fbneo:mame2003_plus_libretro.so|fbneo:mame2010_libretro.so|fbneo:mame2000_libretro.so|\
-    cps1:fbneo_libretro.so|cps1:fbalpha2012_libretro.so|cps1:mame2003_xtreme_libretro.so|\
+    cps1:fbneo_libretro.so|cps1:fbalpha_libretro.so|cps1:fbalpha2012_libretro.so|cps1:mame2003_xtreme_libretro.so|\
     cps1:mame2003_plus_libretro.so|cps1:mame2010_libretro.so|cps1:mame2000_libretro.so|\
-    cps2:fbneo_libretro.so|cps2:fbalpha2012_libretro.so|cps2:mame2003_xtreme_libretro.so|\
+    cps2:fbneo_libretro.so|cps2:fbalpha_libretro.so|cps2:fbalpha2012_libretro.so|cps2:mame2003_xtreme_libretro.so|\
     cps2:mame2003_plus_libretro.so|cps2:mame2010_libretro.so|cps2:mame2000_libretro.so|\
-    cps3:fbneo_libretro.so|cps3:fbalpha2012_libretro.so|cps3:mame2003_xtreme_libretro.so|\
+    cps3:fbneo_libretro.so|cps3:fbalpha_libretro.so|cps3:fbalpha2012_libretro.so|cps3:mame2003_xtreme_libretro.so|\
     cps3:mame2003_plus_libretro.so|cps3:mame2010_libretro.so|cps3:mame2000_libretro.so|\
-    neogeo:fbneo_libretro.so|neogeo:fbalpha2012_libretro.so|neogeo:mame2003_xtreme_libretro.so|\
+    neogeo:fbneo_libretro.so|neogeo:fbalpha_libretro.so|neogeo:fbalpha2012_libretro.so|neogeo:mame2003_xtreme_libretro.so|\
     neogeo:mame2003_plus_libretro.so|neogeo:mame2010_libretro.so|neogeo:mame2000_libretro.so)
       printf '%s\n' "$requested"
       ;;
@@ -296,8 +340,7 @@ mapped_core_hint() {
       printf '%s\n' "$requested"
       ;;
     fc:fceumm_libretro.so|fc:nestopia_libretro.so|fc:mesen_libretro.so|fc:quicknes_libretro.so|\
-    fds:fceumm_libretro.so|fds:nestopia_libretro.so|fds:mesen_libretro.so|fds:quicknes_libretro.so|\
-    fc_hd:fceumm_libretro.so|fc_hd:nestopia_libretro.so|fc_hd:mesen_libretro.so|fc_hd:quicknes_libretro.so)
+    fds:fceumm_libretro.so|fds:nestopia_libretro.so|fds:mesen_libretro.so|fds:quicknes_libretro.so)
       printf '%s\n' "$requested"
       ;;
     sfc:snes9x2005_plus_libretro.so|sfc:snes9x_libretro.so|sfc:snes9x2002_libretro.so|\
@@ -341,34 +384,12 @@ platform_core() {
     return 0
   fi
 
-  if [ "$platform" = "n64" ]; then
-    n64_core="$(first_existing_core \
-      mupen64plus_next_libretro.so \
-      parallel_n64_libretro.so || true)"
-    if [ -n "$n64_core" ]; then
-      printf '%s\n' "$n64_core"
-      return 0
-    fi
-  fi
-
-  if [ "$platform" = "mame" ]; then
-    mame_core="$(first_existing_core mame2022xtreme_libretro.so || true)"
-    if [ -n "$mame_core" ]; then
-      printf '%s\n' "$mame_core"
-      return 0
-    fi
-  fi
-
-  folder="$(platform_folder "$platform")" || return 1
-  core="$(core_from_map "$folder")" || core=""
-  if [ -z "$core" ]; then
-    case "$platform" in
-      gb) core="$GB_CORE" ;;
-      gbc) core="$GBC_CORE" ;;
-      gba) core="$GBA_CORE" ;;
-      *) core="" ;;
-    esac
-  fi
+  case "$platform" in
+    gb) core="${GB_CORE:-$(default_core_for_platform "$platform")}" ;;
+    gbc) core="${GBC_CORE:-$(default_core_for_platform "$platform")}" ;;
+    gba) core="${GBA_CORE:-$(default_core_for_platform "$platform")}" ;;
+    *) core="$(default_core_for_platform "$platform" || true)" ;;
+  esac
   [ -n "$core" ] || return 1
   core_is_safe_libretro "$core" || return 1
   printf '%s\n' "$core"
@@ -454,6 +475,93 @@ is_fbneo_vertical_collection() {
   esac
 }
 
+is_varc_arcade_platform() {
+  case "$1" in
+    cps1|cps2|cps3|fbneo|hbmame|mame|neogeo|pgm2) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+arcade_orientation() {
+  platform="$1"
+  rom="$2"
+  if [ "$platform" = "varcade" ]; then
+    printf 'vertical\n'
+    return 0
+  fi
+  is_varc_arcade_platform "$platform" || return 1
+
+  if [ "$platform" = "fbneo" ]; then
+    collection="$(fbneo_collection_folder "$rom" || true)"
+    if [ -n "$collection" ] && is_fbneo_vertical_collection "$collection"; then
+      printf 'vertical\n'
+      return 0
+    fi
+  fi
+
+  [ -r "$VERTICAL_ARCADE_LIST" ] || return 1
+  filename="${rom##*/}"
+  if grep -Fqx "$filename" "$VERTICAL_ARCADE_LIST"; then
+    printf 'vertical\n'
+  else
+    printf 'horizontal\n'
+  fi
+}
+
+arcade_control_folder() {
+  config_folder="$1"
+  orientation="$2"
+  case "$orientation" in
+    horizontal) printf '%s H\n' "$config_folder" ;;
+    vertical)
+      case "$config_folder" in
+        *\ V) printf '%s\n' "$config_folder" ;;
+        *) printf '%s V\n' "$config_folder" ;;
+      esac
+      ;;
+    *) printf '%s\n' "$config_folder" ;;
+  esac
+}
+
+prepare_arcade_launch_rom() {
+  rom="$1"
+  control_folder="$2"
+  case "$control_folder" in
+    ''|.|..|*/*) return 1 ;;
+  esac
+  filename="${rom##*/}"
+  [ -n "$filename" ] || return 1
+  source_dir="${rom%/*}"
+  link_dir="$ARCADE_ROM_LINK_ROOT/$control_folder"
+  link_path="$link_dir/$filename"
+  mkdir -p "$ARCADE_ROM_LINK_ROOT" || return 1
+  if [ -L "$link_dir" ]; then
+    rm -f "$link_dir" || return 1
+  elif [ -d "$link_dir" ]; then
+    find "$link_dir" -mindepth 1 -maxdepth 1 -type l -exec rm -f {} \; 2>/dev/null
+    rmdir "$link_dir" 2>/dev/null || return 1
+  elif [ -e "$link_dir" ]; then
+    return 1
+  fi
+  ln -s "$source_dir" "$link_dir" || return 1
+  [ -f "$link_path" ] || {
+    rm -f "$link_dir"
+    return 1
+  }
+  printf '%s\n' "$link_path"
+}
+
+cleanup_arcade_launch_rom() {
+  link_path="$1"
+  [ -n "$link_path" ] || return 0
+  case "$link_path" in
+    "$ARCADE_ROM_LINK_ROOT"/*)
+      link_dir="${link_path%/*}"
+      [ -L "$link_dir" ] && rm -f "$link_dir"
+      ;;
+  esac
+}
+
 ra_config_folder() {
   platform="$1"
   fallback="$2"
@@ -477,21 +585,47 @@ ra_config_folder() {
 forced_varc_mode() {
   platform="$1"
   rom="$2"
-  [ "$platform" = "fbneo" ] || return 1
-  collection="$(fbneo_collection_folder "$rom" || true)"
-  [ -n "$collection" ] || return 1
-  is_fbneo_vertical_collection "$collection" || return 1
-  printf '2\n'
+  orientation="$(arcade_orientation "$platform" "$rom" || true)"
+  case "$orientation" in
+    horizontal) printf '1\n' ;;
+    vertical)
+      case "$platform" in
+        varcade) printf '3\n' ;;
+        hbmame) printf '4\n' ;;
+        *) printf '2\n' ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 forced_video_rotation() {
   platform="$1"
   rom="$2"
-  [ "$platform" = "fbneo" ] || return 1
-  collection="$(fbneo_collection_folder "$rom" || true)"
-  [ -n "$collection" ] || return 1
-  is_fbneo_vertical_collection "$collection" && return 1
-  printf '0\n'
+  if [ "$(arcade_orientation "$platform" "$rom" || true)" = "vertical" ]; then
+    printf '3\n'
+  else
+    printf '0\n'
+  fi
+}
+
+ensure_retroarch_config() {
+  [ -r "$RETROARCH_CONFIG" ] && return 0
+  [ -r "$RETROARCH_BASE_CONFIG" ] || return 1
+  mkdir -p "${RETROARCH_CONFIG%/*}" || return 1
+  cp "$RETROARCH_BASE_CONFIG" "$RETROARCH_CONFIG"
+}
+
+prepare_retroarch_append_config() {
+  rotation="$1"
+  mkdir -p "${RETROARCH_APPEND_CONFIG%/*}" || return 1
+  temporary="$RETROARCH_APPEND_CONFIG.tmp.$$"
+  printf 'video_rotation = "%s"\n' "$rotation" >"$temporary" || {
+    rm -f "$temporary"
+    return 1
+  }
+  mv -f "$temporary" "$RETROARCH_APPEND_CONFIG"
+  printf '%s\n' "$RETROARCH_APPEND_CONFIG"
 }
 
 launch_nds() {
@@ -891,14 +1025,14 @@ launch_saturn() {
 
 prepare_private_ra_launcher() {
   [ -x "$PREPARE_RA_LAUNCHER" ] || return 1
-  source_hash="$(hash_file "$SYSTEM_LAUNCHER")" || return 1
+  source_hash="$(hash_file "$MOD_RA_LAUNCHER")" || return 1
   recorded_source_hash="$(read_first_line "$MPL_RA_LAUNCHER.source.sha256")"
   if [ -x "$MPL_RA_LAUNCHER" ] &&
      [ "$source_hash" = "$recorded_source_hash" ] &&
      [ ! "$PREPARE_RA_LAUNCHER" -nt "$MPL_RA_LAUNCHER" ]; then
     return 0
   fi
-  MPL_H700_RA_LAUNCHER_SOURCE="$SYSTEM_LAUNCHER" \
+  MPL_H700_RA_LAUNCHER_SOURCE="$MOD_RA_LAUNCHER" \
     MPL_H700_MPL_RA_LAUNCHER="$MPL_RA_LAUNCHER" \
     "$PREPARE_RA_LAUNCHER" || return 1
   recorded_source_hash="$(read_first_line "$MPL_RA_LAUNCHER.source.sha256")"
@@ -969,16 +1103,21 @@ consume_request() {
     return "$?"
   fi
 
-  [ -x "$SYSTEM_LAUNCHER" ] || {
-    log_line "[launch] rejected launcher_missing path=$SYSTEM_LAUNCHER"
+  launch_route=stock
+  if [ -x "$MOD_RA_LAUNCHER" ]; then
+    launch_route=mod
+  elif [ ! -x "$RETROARCH_BIN" ]; then
+    log_line "[launch] rejected launcher_missing mod=$MOD_RA_LAUNCHER stock=$RETROARCH_BIN"
     return 15
-  }
+  fi
 
   core="$(platform_core "$platform_id" "$core_hint")" || {
-    log_line "[launch] rejected core_unconfigured platform=$platform_id core_hint=$core_hint map=$CORES_MAP"
+    log_line "[launch] rejected core_unconfigured platform=$platform_id core_hint=$core_hint"
     return 16
   }
   config_folder="$(ra_config_folder "$platform_id" "$folder" "$rom_path")"
+  arcade_orientation_value="$(arcade_orientation "$platform_id" "$rom_path" || true)"
+  control_folder="$(arcade_control_folder "$config_folder" "$arcade_orientation_value")"
   varc_mode="$(forced_varc_mode "$platform_id" "$rom_path" || true)"
   video_rotation="$(forced_video_rotation "$platform_id" "$rom_path" || true)"
 
@@ -987,14 +1126,40 @@ consume_request() {
     return 17
   }
 
-  prepare_private_ra_launcher || {
-    log_line "[launch] rejected private_launcher_unavailable path=$MPL_RA_LAUNCHER prepare=$PREPARE_RA_LAUNCHER"
-    return 18
-  }
+  launch_rom_path="$rom_path"
+  arcade_rom_link=""
+  append_config=""
+  runner="$RETROARCH_BIN"
+  if [ "$launch_route" = "mod" ]; then
+    prepare_private_ra_launcher || {
+      log_line "[launch] rejected private_launcher_unavailable source=$MOD_RA_LAUNCHER path=$MPL_RA_LAUNCHER prepare=$PREPARE_RA_LAUNCHER"
+      return 18
+    }
+    runner="$MPL_RA_LAUNCHER"
+  else
+    ensure_retroarch_config || {
+      log_line "[launch] rejected retroarch_config_unavailable config=$RETROARCH_CONFIG base=$RETROARCH_BASE_CONFIG"
+      return 18
+    }
 
-  log_line "[launch] launching platform=$platform_id folder=$folder config_folder=$config_folder varc=$varc_mode rotation=$video_rotation launcher=$launcher_id core=$core game=$game_id rom=$rom_path runner=$MPL_RA_LAUNCHER"
-  # Mirrors the reference project's system RetroArch call shape while keeping
-  # core selection in this device layer and never installing or replacing cores.
+    append_config="$(prepare_retroarch_append_config "$video_rotation" || true)"
+    [ -n "$append_config" ] || {
+      log_line "[launch] rejected retroarch_append_config_unavailable path=$RETROARCH_APPEND_CONFIG"
+      return 18
+    }
+
+  fi
+
+  if [ -n "$arcade_orientation_value" ]; then
+    arcade_rom_link="$(prepare_arcade_launch_rom "$rom_path" "$control_folder" || true)"
+    [ -n "$arcade_rom_link" ] || {
+      log_line "[launch] rejected arcade_rom_link_failed platform=$platform_id control_folder=$control_folder rom=$rom_path"
+      return 19
+    }
+    launch_rom_path="$arcade_rom_link"
+  fi
+
+  log_line "[launch] launching route=$launch_route platform=$platform_id folder=$folder config_folder=$config_folder control_folder=$control_folder orientation=$arcade_orientation_value varc=$varc_mode rotation=$video_rotation launcher=$launcher_id core=$core game=$game_id rom=$rom_path launch_rom=$launch_rom_path runner=$runner config=$RETROARCH_CONFIG appendconfig=$append_config"
   if prepare_retroarch_game_audio; then
     :
   else
@@ -1002,14 +1167,31 @@ consume_request() {
     release_game_audio
   fi
   export LD_LIBRARY_PATH=/usr/lib32:/usr/lib:/mnt/vendor/lib
-  export MPL_FORCE_EMU="$folder"
-  export MPL_FORCE_EMU_DIR="$config_folder"
-  export MPL_FORCE_RA_CONFIG_EMU="$config_folder"
-  export MPL_FORCE_VARC="$varc_mode"
-  export MPL_FORCE_VIDEO_ROTATION="$video_rotation"
   unset LD_PRELOAD
-  "$MPL_RA_LAUNCHER" "$core" "$rom_path" >>"$LOG_FILE" 2>&1
+  if [ "$launch_route" = "mod" ]; then
+    export MPL_FORCE_EMU="$folder"
+    export MPL_FORCE_EMU_DIR="$control_folder"
+    export MPL_FORCE_RA_CONFIG_EMU="$control_folder"
+    export MPL_FORCE_VARC="$varc_mode"
+    if [ "$arcade_orientation_value" = "vertical" ]; then
+      unset MPL_FORCE_VIDEO_ROTATION
+    else
+      export MPL_FORCE_VIDEO_ROTATION="$video_rotation"
+    fi
+    "$MPL_RA_LAUNCHER" "$core" "$launch_rom_path" >>"$LOG_FILE" 2>&1
+  else
+    unset MPL_FORCE_EMU MPL_FORCE_EMU_DIR MPL_FORCE_RA_CONFIG_EMU \
+      MPL_FORCE_VARC MPL_FORCE_VIDEO_ROTATION
+    (
+      cd "$RETROARCH_WORKDIR" || exit 126
+      "$RETROARCH_BIN" -c "$RETROARCH_CONFIG" \
+        -L "$CORE_DIR/$core" \
+        --appendconfig "$append_config" \
+        "$launch_rom_path"
+    ) >>"$LOG_FILE" 2>&1
+  fi
   rc=$?
+  cleanup_arcade_launch_rom "$arcade_rom_link"
   release_game_audio || log_line "[launch] failed to restore frontend hardware volume"
   if [ "$rc" -eq 0 ]; then
     rm -f "$REQUEST_PATH"
