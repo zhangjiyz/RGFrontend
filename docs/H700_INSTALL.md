@@ -5,7 +5,7 @@
 This guide is for the H700 stock Linux release zip, for example:
 
 ```text
-RGFrontend-H700-1.0.2.zip
+RGFrontend-H700-1.0.3.zip
 ```
 
 RGFrontend is a game library and launcher. It does not include ROMs, BIOS
@@ -17,7 +17,7 @@ cores, vendor launcher scripts, or system startup files.
 
 - An H700 stock Linux handheld.
 - A ROM card that the stock firmware can read.
-- The release zip, such as `RGFrontend-H700-1.0.2.zip`.
+- The release zip, such as `RGFrontend-H700-1.0.3.zip`.
 
 The zip layout starts at `Roms/`:
 
@@ -32,12 +32,12 @@ Extract the zip at the TF card root. Do not extract it inside `Roms/APPS`.
 ## Fresh Install
 
 1. Power off the handheld, remove the ROM card, and insert it into your computer.
-2. Copy `RGFrontend-H700-1.0.2.zip` to the TF card root.
+2. Copy `RGFrontend-H700-1.0.3.zip` to the TF card root.
 
    Correct location example:
 
    ```text
-   TF card root/RGFrontend-H700-1.0.2.zip
+   TF card root/RGFrontend-H700-1.0.3.zip
    TF card root/Roms/
    ```
 
@@ -60,10 +60,10 @@ If SSH is enabled on the handheld, you can copy and extract the zip directly on
 the device:
 
 ```sh
-scp RGFrontend-H700-1.0.2.zip root@10.1.1.233:/mnt/mmc/
+scp RGFrontend-H700-1.0.3.zip root@10.1.1.233:/mnt/mmc/
 ssh root@10.1.1.233
 cd /mnt/mmc
-unzip -o RGFrontend-H700-1.0.2.zip
+unzip -o RGFrontend-H700-1.0.3.zip
 ```
 
 After installation, check:
@@ -101,7 +101,7 @@ To upgrade, copy the new zip to the TF card root and extract it again:
 
 ```sh
 cd /mnt/mmc
-unzip -o RGFrontend-H700-1.0.2.zip
+unzip -o RGFrontend-H700-1.0.3.zip
 ```
 
 For a clean reinstall, delete only these APPS files before extracting the zip:
@@ -152,7 +152,7 @@ settings and cache.
 The zip was usually extracted at the wrong level. This layout is wrong:
 
 ```text
-TF card root/RGFrontend-H700-1.0.2/Roms/APPS/...
+TF card root/RGFrontend-H700-1.0.3/Roms/APPS/...
 ```
 
 The correct layout is:

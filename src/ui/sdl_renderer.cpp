@@ -1973,7 +1973,7 @@ void RenderAboutView(SDL_Renderer *renderer, const UiSession &session) {
   int y = 48;
   DrawText(renderer, "RGFrontend", kTextX, y, 30, kInk, canvas_width - 112);
   y += 42;
-  DrawText(renderer, "Version 1.0.2", kTextX, y, 18, kMuted,
+  DrawText(renderer, "Version 1.0.3", kTextX, y, 18, kMuted,
            canvas_width - 112);
   y += 34;
   DrawText(renderer, "Developed by zhangjiyz", kTextX, y, 18, kMuted,

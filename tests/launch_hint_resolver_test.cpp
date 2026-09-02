@@ -32,6 +32,18 @@ int main() {
 
   {
     const LaunchHint hint = ResolveLaunchHint(
+        "am start -n com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture "
+        "-e LIBRETRO /data/data/com.retroarch.aarch64/cores/gpsp_rumble_libretro_android.so "
+        "-e ROM \"{file.uri}\"");
+    assert(hint.kind == LaunchHintKind::AndroidActivity);
+    assert(hint.android_package == "com.retroarch.aarch64");
+    assert(hint.launcher_alias == "retroarch");
+    assert(hint.platform_hint == "gba");
+    assert(hint.core_hint == "mgba_libretro.so");
+  }
+
+  {
+    const LaunchHint hint = ResolveLaunchHint(
         "retroarch -L /home/deck/.config/retroarch/cores/gambatte_libretro.so "
         "\"{file.path}\"");
     assert(hint.kind == LaunchHintKind::LinuxCommand);

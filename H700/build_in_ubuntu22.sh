@@ -53,7 +53,7 @@ printf 'building H700 package in %s with %s\n' "$BUILDER_IMAGE" "$RUNTIME"
   -v "$REPO_ROOT:/work" \
   -w /work \
   -e MPL_H700_SYSROOT=/work/H700/sysroot \
-  -e MPL_H700_VERSION="${MPL_H700_VERSION:-1.0.2}" \
+  -e MPL_H700_VERSION="${MPL_H700_VERSION:-1.0.3}" \
   -e MPL_H700_APP_ID="${MPL_H700_APP_ID:-RGFrontend}" \
   -e MPL_H700_ENTRY_NAME="${MPL_H700_ENTRY_NAME:-RGFrontend}" \
   -e MPL_H700_FORCE_STOCK_ROUTE="${MPL_H700_FORCE_STOCK_ROUTE:-0}" \

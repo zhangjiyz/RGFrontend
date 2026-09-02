@@ -14,7 +14,8 @@ emulator cores, firmware files, or commercial media.
   navigation, cover grid, details panel, favorites, recent games, and settings.
 - Dual-card scanning for `/mnt/mmc/Roms` and `/mnt/sdcard/Roms`.
 - Plain ROM directory scanning.
-- Pegasus `metadata.pegasus.txt` support, including per-game launch/core hints.
+- Pegasus `metadata.pegasus.txt` support, including arbitrary package directory names and
+  per-game launch/core hints.
 - EmulationStation `gamelist.xml` support.
 - Anbernic-style `Imgs/` media lookup.
 - Cover, logo, and video preview support, with safe fallback when media is

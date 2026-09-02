@@ -10,7 +10,7 @@ RGFrontend 是一个面向 H700 原厂 Linux 掌机的轻量游戏库与启动�
 - 掌机界面已包含 720x480、640x480 和 720x720 布局，并提供平台导航、封面网格、详情面板、收藏、最近游戏和设置。
 - 支持 `/mnt/mmc/Roms` 与 `/mnt/sdcard/Roms` 双卡扫描。
 - 支持普通 ROM 目录扫描。
-- 支持 Pegasus `metadata.pegasus.txt`，包括单游戏启动/核心提示。
+- 支持任意内容包目录名的 Pegasus `metadata.pegasus.txt`，包括单游戏启动/核心提示。
 - 支持 EmulationStation `gamelist.xml`。
 - 支持安伯尼克常见 `Imgs/` 媒体目录。
 - 支持封面、Logo 和视频预览；媒体缺失时安全回退。

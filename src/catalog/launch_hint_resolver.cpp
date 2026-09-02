@@ -87,6 +87,7 @@ void ApplyCoreHint(const std::string &lower, LaunchHint *hint) {
   };
   static const CoreMap kCores[] = {
       {"mgba", "mgba_libretro.so", "gba", "retroarch"},
+      {"gpsp_rumble", "mgba_libretro.so", "gba", "retroarch"},
       {"gpsp", "gpsp_libretro.so", "gba", "retroarch"},
       {"vba_next", "vba_next_libretro.so", "gba", "retroarch"},
       {"vba-next", "vba_next_libretro.so", "gba", "retroarch"},

@@ -20,6 +20,7 @@ namespace {
 
 struct ParsedGame {
   std::string collection_title;
+  std::vector<std::string> collection_extensions;
   std::string title;
   std::string developer;
   std::string publisher;
@@ -68,6 +69,29 @@ std::string UnescapeText(std::string value) {
   return result;
 }
 
+std::vector<std::string> ParseExtensions(const std::string &value) {
+  std::vector<std::string> extensions;
+  std::string current;
+  const auto finish = [&]() {
+    std::string extension = LowerAscii(Trim(current));
+    current.clear();
+    if (extension.empty()) return;
+    if (extension.front() != '.') extension.insert(extension.begin(), '.');
+    if (std::find(extensions.begin(), extensions.end(), extension) == extensions.end()) {
+      extensions.push_back(std::move(extension));
+    }
+  };
+  for (char ch : value) {
+    if (ch == ',' || std::isspace(static_cast<unsigned char>(ch))) {
+      finish();
+    } else {
+      current.push_back(ch);
+    }
+  }
+  finish();
+  return extensions;
+}
+
 std::string BuildDisplayTitle(const ParsedGame &entry) {
   const bool single_file = entry.files.size() == 1 && !entry.files.front().empty();
   std::string game_name = entry.title;
@@ -114,6 +138,7 @@ std::vector<ParsedGame> ParseMetadataFile(const fs::path &metadata) {
   std::vector<ParsedGame> games;
   ParsedGame current;
   std::string collection_title;
+  std::vector<std::string> collection_extensions;
   std::string collection_launch_hint;
   bool has_current = false;
   bool reading_files = false;
@@ -134,6 +159,7 @@ std::vector<ParsedGame> ParseMetadataFile(const fs::path &metadata) {
     if (line.rfind("game:", 0) == 0) {
       finish();
       current.collection_title = collection_title;
+      current.collection_extensions = collection_extensions;
       current.title = Trim(line.substr(5));
       current.launch_hint = collection_launch_hint;
       has_current = true;
@@ -152,6 +178,8 @@ std::vector<ParsedGame> ParseMetadataFile(const fs::path &metadata) {
       const std::string value = Trim(line.substr(colon + 1));
       if (key == "collection") {
         collection_title = value;
+      } else if (key == "extensions") {
+        collection_extensions = ParseExtensions(value);
       } else if (key == "launch") {
         collection_launch_hint = value;
         reading_collection_launch = true;
@@ -196,6 +224,38 @@ std::vector<ParsedGame> ParseMetadataFile(const fs::path &metadata) {
   return games;
 }
 
+bool IsPackageDiscoveryDirectory(const fs::path &path) {
+  const std::string name = LowerAscii(path.filename().u8string());
+  return name != "apps" && name != "imgs" && name != "images" && name != "media" &&
+         name != "videos" && name != "manuals" && !IsIgnoredDataPath(path.filename());
+}
+
+std::vector<fs::path> PackageMetadataFiles(const std::vector<std::string> &rom_roots) {
+  std::vector<fs::path> metadata_files;
+  for (const std::string &root_text : rom_roots) {
+    const fs::path root = fs::u8path(root_text);
+    std::error_code error;
+    if (!fs::is_directory(root, error)) continue;
+    if (fs::is_regular_file(root / "metadata.pegasus.txt", error)) {
+      metadata_files.push_back(root / "metadata.pegasus.txt");
+    }
+    error.clear();
+    fs::directory_iterator it(root, fs::directory_options::skip_permission_denied, error);
+    const fs::directory_iterator end;
+    for (; !error && it != end; it.increment(error)) {
+      if (!it->is_directory(error) || !IsPackageDiscoveryDirectory(it->path())) continue;
+      const fs::path metadata = it->path() / "metadata.pegasus.txt";
+      error.clear();
+      if (fs::is_regular_file(metadata, error)) metadata_files.push_back(metadata);
+      error.clear();
+    }
+  }
+  std::sort(metadata_files.begin(), metadata_files.end());
+  metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()),
+                       metadata_files.end());
+  return metadata_files;
+}
+
 std::string ExistingFile(const fs::path &base, const std::string &candidate) {
   if (candidate.empty()) return {};
   const fs::path path = fs::u8path(candidate).is_absolute() ? fs::u8path(candidate)
@@ -238,6 +298,39 @@ std::string ResolveMedia(const fs::path &base, const ParsedGame &game,
 }
 
 }  // namespace
+
+std::vector<PegasusPackageInfo> PegasusProvider::DiscoverPackages(
+    const std::vector<std::string> &rom_roots) const {
+  std::vector<PegasusPackageInfo> packages;
+  for (const fs::path &metadata : PackageMetadataFiles(rom_roots)) {
+    const std::vector<ParsedGame> games = ParseMetadataFile(metadata);
+    if (games.empty()) continue;
+
+    PegasusPackageInfo package;
+    package.root_path = NormalizedPath(metadata.parent_path()).u8string();
+    package.metadata_path = NormalizedPath(metadata).u8string();
+    package.collection_title = games.front().collection_title;
+    package.extensions = games.front().collection_extensions;
+    for (const ParsedGame &game : games) {
+      for (const std::string &file : game.files) {
+        const std::string extension = LowerAscii(fs::u8path(file).extension().u8string());
+        if (!extension.empty() &&
+            std::find(package.extensions.begin(), package.extensions.end(), extension) ==
+                package.extensions.end()) {
+          package.extensions.push_back(extension);
+        }
+      }
+      const LaunchHint hint = ResolveLaunchHint(game.launch_hint);
+      if (!hint.platform_hint.empty() &&
+          std::find(package.platform_hints.begin(), package.platform_hints.end(),
+                    hint.platform_hint) == package.platform_hints.end()) {
+        package.platform_hints.push_back(hint.platform_hint);
+      }
+    }
+    packages.push_back(std::move(package));
+  }
+  return packages;
+}
 
 ScanResult PegasusProvider::Scan(const Platform &platform,
                                  const std::vector<ScanRoot> &roots) const {

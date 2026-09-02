@@ -1,6 +1,7 @@
 #include "catalog/library_builder.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -25,7 +26,7 @@ namespace mpl {
 
 namespace {
 
-constexpr int kScanCacheVersion = 26;
+constexpr int kScanCacheVersion = 28;
 
 struct CachedRoot {
   std::string platform_id;
@@ -423,6 +424,134 @@ bool HasMetadataFile(const fs::path &root, const char *filename) {
   return false;
 }
 
+std::vector<std::string> PegasusDiscoveryRoots(const std::vector<Platform> &platforms) {
+  std::vector<std::string> roots;
+  for (const Platform &platform : platforms) {
+    for (const std::string &directory : platform.rom_directories) {
+      const std::string root = NormalizedPath(fs::u8path(directory).parent_path()).u8string();
+      if (std::find(roots.begin(), roots.end(), root) == roots.end()) roots.push_back(root);
+    }
+  }
+  return roots;
+}
+
+bool PackageAlreadyCovered(const PegasusPackageInfo &package,
+                           const std::vector<Platform> &platforms) {
+  for (const Platform &platform : platforms) {
+    for (const std::string &directory : platform.rom_directories) {
+      if (PathIsInside(fs::u8path(package.root_path), fs::u8path(directory))) return true;
+    }
+  }
+  return false;
+}
+
+bool StartsWithPlatformName(const std::string &collection_title,
+                            const std::string &candidate) {
+  const std::string title = LowerAscii(collection_title);
+  const std::string name = LowerAscii(candidate);
+  if (name.empty() || title.rfind(name, 0) != 0) return false;
+  if (title.size() == name.size()) return true;
+  return !std::isalnum(static_cast<unsigned char>(title[name.size()]));
+}
+
+int CollectionMatchScore(const PegasusPackageInfo &package, const Platform &platform) {
+  std::vector<std::string> names = {platform.id, platform.display_name};
+  names.insert(names.end(), platform.directory_aliases.begin(),
+               platform.directory_aliases.end());
+  names.insert(names.end(), platform.platform_aliases.begin(),
+               platform.platform_aliases.end());
+  int score = 0;
+  for (const std::string &name : names) {
+    if (LowerAscii(package.collection_title) == LowerAscii(name)) {
+      score = std::max(score, 300);
+    } else if (StartsWithPlatformName(package.collection_title, name)) {
+      score = std::max(score, 250);
+    }
+  }
+  return score;
+}
+
+int ExtensionMatchScore(const PegasusPackageInfo &package, const Platform &platform) {
+  if (package.extensions.empty()) return 0;
+  bool has_specific_extension = false;
+  for (const std::string &extension : package.extensions) {
+    const std::string normalized = LowerAscii(extension);
+    if (normalized != ".zip" && normalized != ".7z") has_specific_extension = true;
+    bool supported = false;
+    for (std::string candidate : platform.extensions) {
+      candidate = LowerAscii(std::move(candidate));
+      if (!candidate.empty() && candidate.front() != '.') {
+        candidate.insert(candidate.begin(), '.');
+      }
+      if (candidate == normalized) {
+        supported = true;
+        break;
+      }
+    }
+    if (!supported) return -1;
+  }
+  return has_specific_extension ? 100 : 10;
+}
+
+Platform *ResolvePackagePlatform(const PegasusPackageInfo &package,
+                                 std::vector<Platform> *platforms) {
+  if (!platforms) return nullptr;
+  int best_score = -1;
+  Platform *best = nullptr;
+  bool tied = false;
+  for (Platform &platform : *platforms) {
+    const int extension_score = ExtensionMatchScore(package, platform);
+    if (extension_score < 0) continue;
+    int score = CollectionMatchScore(package, platform) + extension_score;
+    if (std::find(package.platform_hints.begin(), package.platform_hints.end(), platform.id) !=
+        package.platform_hints.end()) {
+      score += 200;
+    }
+    if (score > best_score) {
+      best_score = score;
+      best = &platform;
+      tied = false;
+    } else if (score == best_score) {
+      tied = true;
+    }
+  }
+  return best_score >= 100 && !tied ? best : nullptr;
+}
+
+bool IsExplicitlyDisabledPackage(const PegasusPackageInfo &package) {
+  return LowerAscii(package.collection_title) == "fc-hd";
+}
+
+void ExpandPegasusPackageRoots(std::vector<Platform> *platforms,
+                               std::vector<std::string> *warnings = nullptr) {
+  if (!platforms) return;
+  const std::vector<std::string> discovery_roots = PegasusDiscoveryRoots(*platforms);
+  const std::vector<PegasusPackageInfo> packages =
+      PegasusProvider().DiscoverPackages(discovery_roots);
+  for (const PegasusPackageInfo &package : packages) {
+    if (PackageAlreadyCovered(package, *platforms)) continue;
+    if (IsExplicitlyDisabledPackage(package)) {
+      if (warnings) warnings->push_back("disabled Pegasus package: " + package.metadata_path);
+      continue;
+    }
+    Platform *platform = ResolvePackagePlatform(package, platforms);
+    if (!platform) {
+      if (warnings) warnings->push_back("unresolved Pegasus package: " + package.metadata_path);
+      continue;
+    }
+    const auto duplicate = std::find_if(
+        platform->rom_directories.begin(), platform->rom_directories.end(),
+        [&](const std::string &existing) {
+          std::error_code error;
+          return fs::equivalent(fs::u8path(existing), fs::u8path(package.root_path), error) &&
+                 !error;
+        });
+    if (duplicate == platform->rom_directories.end()) {
+      platform->rom_directories.push_back(package.root_path);
+    }
+  }
+}
+
 void WriteScanCache(const Library &library, const std::string &cache_path,
                     LibraryBuildReport *report) {
   if (cache_path.empty()) return;
@@ -494,6 +623,7 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
                                          ProgressCallback progress) const {
   const auto total_start = Clock::now();
   LibraryBuildReport report;
+  ExpandPegasusPackageRoots(&platforms, &report.warnings);
   if (progress) progress({5, "读取扫描缓存"});
   const auto cache_start = Clock::now();
   const CachedLibrary cache = LoadScanCache(cache_path);
@@ -694,17 +824,29 @@ LibraryBuildReport LibraryBuilder::Build(std::vector<Platform> platforms,
 bool LibraryBuilder::CanRestoreFromCache(const std::vector<Platform> &platforms,
                                          const std::string &cache_path) const {
   const auto total_start = Clock::now();
+  std::vector<Platform> expanded_platforms = platforms;
+  ExpandPegasusPackageRoots(&expanded_platforms);
   const CachedRootSummary cache = LoadScanCacheRootSummary(cache_path);
   int checked_roots = 0;
   int stale_roots = 0;
   bool fresh = cache.version_ok && cache.has_games && !cache.roots.empty();
-  for (const Platform &platform : platforms) {
+  std::unordered_set<std::string> expected_roots;
+  for (const Platform &platform : expanded_platforms) {
     for (const std::string &directory : platform.rom_directories) {
       ++checked_roots;
+      expected_roots.insert(platform.id + "\n" + NormalizedPath(fs::u8path(directory)).u8string());
       if (!CachedRootIsFresh(cache, platform, directory)) {
         ++stale_roots;
         fresh = false;
       }
+    }
+  }
+  for (const CachedRoot &root : cache.roots) {
+    const std::string key = root.platform_id + "\n" +
+                            NormalizedPath(fs::u8path(root.root)).u8string();
+    if (expected_roots.find(key) == expected_roots.end()) {
+      ++stale_roots;
+      fresh = false;
     }
   }
   std::cerr << "[perf] library.cache_fresh_check ms=" << ElapsedMs(total_start)
@@ -720,6 +862,7 @@ LibraryBuildReport LibraryBuilder::RestoreFromCache(std::vector<Platform> platfo
                                                     const std::string &cache_path) const {
   const auto total_start = Clock::now();
   LibraryBuildReport report;
+  ExpandPegasusPackageRoots(&platforms, &report.warnings);
   const auto cache_start = Clock::now();
   const CachedLibrary cache = LoadScanCache(cache_path);
   std::cerr << "[perf] library.restore_cache_load ms=" << ElapsedMs(cache_start)

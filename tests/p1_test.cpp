@@ -39,6 +39,9 @@ int main() {
 
   const fs::path card = root / "mnt" / "sdcard";
   const fs::path gb = card / "Roms" / "GB";
+  const fs::path gba_hack_package = card / "Roms" / "任意目录甲";
+  const fs::path gba_vib_package = card / "Roms" / "任意目录乙";
+  const fs::path unresolved_package = card / "Roms" / "任意未知目录";
   const fs::path gbc_physical = card / "Roms" / "GBC";
   const fs::path gbc_alias = card / "Roms" / "Game Boy Color";
   const fs::path fc = card / "Roms" / "FC";
@@ -56,9 +59,13 @@ int main() {
   const fs::path fbneo_fly = card / "Roms" / "FBNEO FLY";
   const fs::path mame_fly = card / "Roms" / "MAME FLY";
   const fs::path naomi = card / "Roms" / "NAOMI";
+  const fs::path atomiswave = card / "Roms" / "ATOMISWAVE";
   const fs::path system = root / "system";
   fs::create_directories(gb / "media");
   fs::create_directories(gb / "videos");
+  fs::create_directories(gba_hack_package);
+  fs::create_directories(gba_vib_package);
+  fs::create_directories(unresolved_package);
   fs::create_directories(gbc_physical);
   fs::create_directory_symlink(gbc_physical.filename(), gbc_alias);
   fs::create_directories(fc);
@@ -77,6 +84,7 @@ int main() {
   fs::create_directories(fbneo_fly / "media" / "1944");
   fs::create_directories(mame_fly);
   fs::create_directories(naomi / "ikaruga");
+  fs::create_directories(atomiswave);
   fs::create_directories(system);
   std::ofstream(system / "RA_launch.sh") << "#!/bin/sh\n";
   std::ofstream(system / "setNDS.sh") << "#!/bin/sh\n";
@@ -91,6 +99,9 @@ int main() {
   std::ofstream(gb / "Tetris.gb") << "gb-rom";
   std::ofstream(gb / "Kirby.gb") << "gb-rom";
   std::ofstream(gb / "Metroid.gb") << "gb-rom-not-in-es";
+  std::ofstream(gba_hack_package / "Hack.zip") << "gba-hack-rom";
+  std::ofstream(gba_vib_package / "Rumble.zip") << "gba-vib-rom";
+  std::ofstream(unresolved_package / "Unknown.zip") << "unknown-rom";
   std::ofstream(gb / "media" / "tetris.png") << "png";
   std::ofstream(gb / "media" / "tetris-logo.png") << "logo";
   std::ofstream(gb / "media" / "tetris-video.mp4") << "video";
@@ -130,6 +141,34 @@ int main() {
   std::ofstream(mame_fly / "aerofgt.zip") << "mame-rom";
   std::ofstream(naomi / "ikaruga.zip") << "naomi-rom";
   std::ofstream(naomi / "ikaruga" / "gdl-0010.chd") << "naomi-chd-sidecar";
+  std::ofstream(atomiswave / "Samurai.bin") << "atomiswave-bin-rom";
+  {
+    std::ofstream metadata(gba_hack_package / "metadata.pegasus.txt");
+    metadata << "collection: GBA hack\n";
+    metadata << "extensions: gba, 7z, zip\n";
+    metadata << "launch: am start --user 0\n";
+    metadata << "  -n com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture\n";
+    metadata << "  -e LIBRETRO /data/data/com.retroarch.aarch64/cores/mgba_libretro_android.so\n\n";
+    metadata << "game: GBA Hack Package\n";
+    metadata << "file: Hack.zip\n";
+  }
+  {
+    std::ofstream metadata(gba_vib_package / "metadata.pegasus.txt");
+    metadata << "collection: GBA vib\n";
+    metadata << "extensions: gba, 7z, zip\n";
+    metadata << "launch: am start --user 0\n";
+    metadata << "  -n com.retroarch.aarch64/com.retroarch.browser.retroactivity.RetroActivityFuture\n";
+    metadata << "  -e LIBRETRO /data/data/com.retroarch.aarch64/cores/gpsp_rumble_libretro_android.so\n\n";
+    metadata << "game: GBA Vibration Package\n";
+    metadata << "file: Rumble.zip\n";
+  }
+  {
+    std::ofstream metadata(unresolved_package / "metadata.pegasus.txt");
+    metadata << "collection: 未知合集\n";
+    metadata << "extensions: zip\n\n";
+    metadata << "game: Unknown Package\n";
+    metadata << "file: Unknown.zip\n";
+  }
   {
     std::ofstream gamelist(gb / "gamelist.xml");
     gamelist << "<gameList>\n";
@@ -341,17 +380,20 @@ int main() {
 
   const fs::path cache = root / "app-data" / "library" / "scan_cache.tsv";
   LibraryBuildReport first = LibraryBuilder().Build(platforms, cache.u8string());
-  assert(first.rom_directory_games == 6);
+  assert(first.rom_directory_games == 7);
   assert(first.emulationstation_games == 2);
   assert(first.anbernic_games == 4);
-  assert(first.pegasus_games == 10);
+  assert(first.pegasus_games == 12);
   assert(first.merged_duplicates == 5);
   assert(first.cache_records_written > 0);
-  assert(first.library.games.size() == 17);
+  assert(first.library.games.size() == 20);
+  assert(LibraryBuilder().CanRestoreFromCache(platforms, cache.u8string()));
 
   const Game *tetris = FindByTitle(first.library.games, "Tetris DX Metadata");
   const Game *kirby = FindByTitle(first.library.games, "Kirby Metadata");
   const Game *oracle = FindByTitle(first.library.games, "Oracle");
+  const Game *gba_hack_game = FindByTitle(first.library.games, "GBA Hack Package");
+  const Game *gba_vib_game = FindByTitle(first.library.games, "GBA Vibration Package");
   const Game *contra = FindByTitle(first.library.games, "Contra");
   const Game *contra_hack = FindByTitle(first.library.games, "Contra Hack");
   const Game *hd_pack = FindByTitle(first.library.games, "HD Pack");
@@ -367,9 +409,12 @@ int main() {
   const Game *flyer = FindByTitle(first.library.games, "1944 循环的征服者");
   const Game *aerofgt = FindByTitle(first.library.games, "音速战机");
   const Game *ikaruga = FindByTitle(first.library.games, "斑鸠");
+  const Game *samurai = FindByTitle(first.library.games, "Samurai");
   assert(tetris);
   assert(kirby);
   assert(oracle);
+  assert(gba_hack_game);
+  assert(gba_vib_game);
   assert(oracle->alternate_targets.empty());
   assert(contra);
   assert(contra_hack);
@@ -386,10 +431,12 @@ int main() {
   assert(flyer);
   assert(aerofgt);
   assert(ikaruga);
+  assert(samurai);
   assert(!FindByTitle(first.library.games, "._Oracle"));
   assert(!FindByTitle(first.library.games, "._1944"));
   assert(!FindByTitle(first.library.games, "orphan"));
   assert(!FindByTitle(first.library.games, "Empty Pegasus Package"));
+  assert(!FindByTitle(first.library.games, "Unknown Package"));
   assert(CountByTitle(first.library.games, "PicoGame") == 1);
   assert(!FindByTitle(first.library.games, "Balatro"));
   assert(CountByTitle(first.library.games, "小丑牌") == 1);
@@ -408,6 +455,12 @@ int main() {
   assert(kirby->media.video.find("Kirby.mkv") != std::string::npos);
   assert(!tetris->fingerprint.sample_hash.empty());
   assert(oracle->platform_id == "gbc");
+  assert(gba_hack_game->platform_id == "gba");
+  assert(gba_hack_game->collection_title == "GBA hack");
+  assert(gba_hack_game->launch_hint.core_hint == "mgba_libretro.so");
+  assert(gba_vib_game->platform_id == "gba");
+  assert(gba_vib_game->collection_title == "GBA vib");
+  assert(gba_vib_game->launch_hint.core_hint == "mgba_libretro.so");
   assert(contra->platform_id == "fc");
   assert(contra->collection_title == "FC");
   assert(contra_hack->platform_id == "fc");
@@ -483,6 +536,7 @@ int main() {
   assert(ikaruga->source == "pegasus");
   assert(ikaruga->display_title == "ikaruga/Treasure");
   assert(ikaruga->publisher == "Treasure");
+  assert(samurai->platform_id == "atomiswave");
   for (const Game &game : first.library.games) {
     if (game.platform_id == "dreamcast" || game.platform_id == "fbneo" ||
         game.platform_id == "mame" || game.platform_id == "naomi") {
@@ -492,8 +546,8 @@ int main() {
 
   LibraryBuildReport second = LibraryBuilder().Build(platforms, cache.u8string());
   assert(second.skipped_roots > 0);
-  assert(second.cached_games == 17);
-  assert(second.library.games.size() == 17);
+  assert(second.cached_games == 20);
+  assert(second.library.games.size() == 20);
   const Game *cached_tetris = FindByTitle(second.library.games, "Tetris DX Metadata");
   assert(cached_tetris);
   assert(cached_tetris->source == "emulationstation");
@@ -553,6 +607,9 @@ int main() {
   assert(cached_pico_game->platform_id == "pico");
   assert(cached_pico_game->media.cover == pico_game->media.cover);
   assert(CountByTitle(second.library.games, "PicoGame") == 1);
+  assert(FindByTitle(second.library.games, "GBA Hack Package"));
+  assert(FindByTitle(second.library.games, "GBA Vibration Package"));
+  assert(FindByTitle(second.library.games, "Samurai"));
 
   const fs::path ps_root = root / "disc" / "PS";
   fs::create_directories(ps_root);
